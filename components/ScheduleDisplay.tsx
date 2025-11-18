@@ -10,6 +10,7 @@ import ExternalLinkIcon from './icons/ExternalLinkIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import CoffeeIcon from './icons/CoffeeIcon';
 import { stringToColor } from '../services/colorService';
+import { afyaLogoDataUrl } from './icons/AfyaLogo';
 
 // Helper para exibir a observação em destaque
 const ObservacaoDisplay: React.FC<{ text: string }> = ({ text }) => {
@@ -76,14 +77,16 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
 
       {/* Lista de Grupos - Renderizados como mini-cards internos */}
       <div className="flex-grow p-3 space-y-3">
-        {aula.subSessions.map((sessao, idx) => (
+        {aula.subSessions.map((sessao, idx) => {
+            const isMultiGroup = sessao.grupo.includes(',');
+            return (
             <div 
                 key={`${sessao.grupo}-${idx}`} 
                 className="bg-slate-900/50 border border-slate-700 rounded-md p-3 aula-inner-card"
             >
                 <div className="flex flex-wrap justify-between items-center gap-2 mb-2 border-b border-slate-700/50 pb-2">
                      <span className="font-bold text-afya-blue bg-blue-900/20 px-2 py-0.5 rounded text-xs border border-blue-900/30">
-                        Grupo: {sessao.grupo.replace(/^(GRUPO|Grupo)\s*-\s*|^(GRUPO|Grupo)\s+/i, '')}
+                        {isMultiGroup ? 'Grupos:' : 'Grupo:'} {sessao.grupo}
                      </span>
                      <span className="text-gray-300 flex items-center gap-1 text-xs font-medium">
                         <ClockIcon className="w-3 h-3 text-gray-500" /> {sessao.horario}
@@ -103,7 +106,8 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
                 
                 {sessao.observacao && <ObservacaoDisplay text={sessao.observacao} />}
             </div>
-        ))}
+            );
+        })}
       </div>
 
       {/* Observação Geral da Disciplina (se houver e não estiver coberta por grupos) */}
@@ -140,31 +144,27 @@ const DiaCard: React.FC<{ diaDeAula: DiaDeAula }> = ({ diaDeAula }) => {
   );
 };
 
-// --- Helper function to summarize groups for PDF title ---
 const getGroupRangeSummary = (schedule: Schedule): string => {
     const allGroups = new Set<string>();
     
     schedule.forEach(day => {
         day.aulas.forEach(aula => {
             if (aula.isFreeSlot) return;
-            // Ignore Electives for the main group summary usually, or include them if desired.
-            // The user prompt asks to summarize groups like "Groups A to E".
-            // Usually "Eletiva" is a generic group name, so we might filter it out if it's exactly "Eletiva".
             
             aula.subSessions.forEach(sub => {
-                const cleanName = sub.grupo.replace(/^(GRUPO|Grupo)\s*-\s*|^(GRUPO|Grupo)\s+/i, '').trim();
-                if (cleanName && cleanName.toLowerCase() !== 'eletiva' && cleanName.toLowerCase() !== 'geral') {
-                    allGroups.add(cleanName);
-                }
+                const subs = sub.grupo.split(',').map(s => s.trim());
+                subs.forEach(cleanName => {
+                    if (cleanName && cleanName.toLowerCase() !== 'eletiva' && cleanName.toLowerCase() !== 'geral') {
+                        allGroups.add(cleanName);
+                    }
+                });
             });
         });
     });
 
     const groupsArray = Array.from(allGroups);
-    
     if (groupsArray.length === 0) return "";
 
-    // Sort logic similar to service
     groupsArray.sort((a, b) => {
         const isNumA = !isNaN(Number(a));
         const isNumB = !isNaN(Number(b));
@@ -177,19 +177,16 @@ const getGroupRangeSummary = (schedule: Schedule): string => {
         return `Grupo ${groupsArray[0]}`;
     }
 
-    // Check if sequential numeric
     const isAllNumeric = groupsArray.every(g => !isNaN(Number(g)));
     if (isAllNumeric) {
         return `Grupos de ${groupsArray[0]} a ${groupsArray[groupsArray.length - 1]}`;
     }
 
-    // Check if sequential single letters (A, B, C...)
     const isAllSingleLetters = groupsArray.every(g => g.length === 1 && g.match(/[a-zA-Z]/));
     if (isAllSingleLetters) {
          return `Grupos de ${groupsArray[0]} a ${groupsArray[groupsArray.length - 1]}`;
     }
 
-    // Fallback for mixed or non-sequential: just list them or say "Grupos Selecionados" if too many
     if (groupsArray.length <= 5) {
         return `Grupos: ${groupsArray.join(', ')}`;
     }
@@ -208,95 +205,90 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
 
   const handleViewPdf = async () => {
     const scheduleContent = document.getElementById('schedule-pdf-content');
-    if (!scheduleContent) {
-      console.error('Elemento do cronograma não encontrado para gerar o PDF.');
-      return;
-    }
+    if (!scheduleContent) return;
   
     setIsGeneratingPdf(true);
   
-    // 1. Cria um contêiner invisível para o conteúdo do PDF.
-    const pdfContainer = document.createElement('div');
-    pdfContainer.className = 'pdf-export-container';
+    // --- 1. Prepare Temporary Containers ---
+    const tempContainer = document.createElement('div');
+    tempContainer.className = 'pdf-export-container';
     
-    // Adiciona a marca d'água
-    const watermark = document.createElement('img');
-    watermark.src = 'https://cdn.prod.website-files.com/65e07e5b264deb36f6e003d9/6883f05c26e613e478e32cd9_A.png';
-    watermark.alt = "Marca d'água Afya";
-    watermark.className = 'pdf-watermark';
-    pdfContainer.appendChild(watermark);
+    // 1a. Create Header Element
+    // Use innerHTML for complex layout to ensure styles are applied correctly for html2canvas
+    const headerWrapper = document.createElement('div');
+    headerWrapper.style.backgroundColor = '#ffffff';
+    headerWrapper.style.padding = '20px 40px 0 40px';
+    headerWrapper.style.width = '1600px';
 
-    // 2. Cria e adiciona o cabeçalho do PDF.
-    const header = document.createElement('div');
-    header.className = 'pdf-header';
+    const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
 
-    // Container Esquerdo (Logo)
-    const leftContainer = document.createElement('div');
-    leftContainer.className = 'pdf-header-left';
+    headerWrapper.innerHTML = `
+        <div class="pdf-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #CE0058; padding-bottom: 15px; margin-bottom: 10px;">
+            <div style="flex-shrink: 0;">
+                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain;" alt="Afya Logo" crossorigin="anonymous" />
+            </div>
+            <div style="text-align: right; font-family: sans-serif;">
+                <h2 style="color: #CE0058; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
+                <div style="color: #4b5563; font-size: 11px; line-height: 1.4;">
+                    <span style="font-weight: 600; color: #1f2937;">Coordenador do Curso:</span> Prof. Kristhea Karyne <span style="color:#CE0058; margin:0 6px;">|</span> 
+                    <span style="font-weight: 600; color: #1f2937;">Coordenadora Adjunta:</span> Prof. Roberya Viana
+                </div>
+            </div>
+        </div>
+    `;
     
-    const logo = document.createElement('img');
-    logo.src = 'https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png';
-    logo.alt = 'Logo Afya Ciências Médicas';
-    logo.className = 'pdf-logo';
-    
-    leftContainer.appendChild(logo);
-
-    // Container Direito (Coordenação)
-    const rightContainer = document.createElement('div');
-    rightContainer.className = 'pdf-header-right';
-
-    const coordTitle = document.createElement('div');
-    coordTitle.className = 'pdf-coord-title';
-    coordTitle.textContent = 'COORDENAÇÃO DO CURSO DE MEDICINA';
-
-    const coordNames = document.createElement('div');
-    coordNames.className = 'pdf-coord-names';
-    coordNames.innerHTML = 'Coordenador do Curso Prof. Kristhea Karyne <span style="color:#CE0058; margin:0 5px">|</span> Coordenadora Adjunta Prof. Roberya Viana';
-
-    rightContainer.appendChild(coordTitle);
-    rightContainer.appendChild(coordNames);
-
-    header.appendChild(leftContainer);
-    header.appendChild(rightContainer);
-    pdfContainer.appendChild(header);
-    
-    // 3. Adiciona o título contextual com o período E O RESUMO DOS GRUPOS
+    // 1b. Create Title for Grid
     const groupSummary = schedule ? getGroupRangeSummary(schedule) : "";
     const fullTitle = groupSummary 
         ? `Grade Curricular - ${periodo} - ${groupSummary}`
         : `Grade Curricular - ${periodo}`;
-
-    const scheduleTitle = document.createElement('h2');
-    scheduleTitle.className = 'pdf-title';
-    scheduleTitle.textContent = fullTitle;
-    pdfContainer.appendChild(scheduleTitle);
-
-
-    // 4. Clona o conteúdo do cronograma e o prepara para exportação.
+    
+    const gridTitleContainer = document.createElement('div');
+    gridTitleContainer.innerHTML = `<h2 class="pdf-title" style="text-align: center; font-size: 24px; font-weight: bold; color: #374151; margin: 20px 0;">${fullTitle}</h2>`;
+    
+    // 1c. Clone Grid Content
     const contentClone = scheduleContent.cloneNode(true) as HTMLElement;
-    contentClone.removeAttribute('id'); // Remove o ID para evitar duplicatas
+    contentClone.removeAttribute('id');
     const grid = contentClone.querySelector('.grid');
-    if (grid) {
-      grid.className = 'pdf-export-grid';
-    }
-    pdfContainer.appendChild(contentClone);
+    if (grid) grid.className = 'pdf-export-grid';
+    
+    // Assemble Body Capture Container (Title + Grid)
+    const bodyWrapper = document.createElement('div');
+    bodyWrapper.style.backgroundColor = '#ffffff';
+    bodyWrapper.style.padding = '10px 40px 40px 40px';
+    bodyWrapper.style.width = '1600px';
+    bodyWrapper.appendChild(gridTitleContainer);
+    bodyWrapper.appendChild(contentClone);
+    
+    tempContainer.appendChild(headerWrapper);
+    tempContainer.appendChild(bodyWrapper);
+    document.body.appendChild(tempContainer);
 
-    // 5. Anexa o contêiner preparado ao corpo do documento.
-    document.body.appendChild(pdfContainer);
-
-    // 6. Aguarda o próximo frame para garantir que o navegador renderizou o conteúdo clonado.
+    // --- 2. Generate PDF ---
     requestAnimationFrame(async () => {
       try {
         const { jsPDF } = window.jspdf;
-        // Renderiza o contêiner invisível em uma imagem canvas.
-        const canvas = await html2canvas(pdfContainer, {
-          scale: 2, // Aumenta a resolução para melhor qualidade de impressão
+        
+        // Capture Header
+        const headerCanvas = await html2canvas(headerWrapper, {
+          scale: 2,
           useCORS: true,
-          backgroundColor: '#ffffff'
+          backgroundColor: '#ffffff',
+          logging: false
         });
-        const imgData = canvas.toDataURL('image/png');
+        const headerImgData = headerCanvas.toDataURL('image/png');
+        const headerImgProps = new jsPDF().getImageProperties(headerImgData);
 
-        // Cria o PDF. A3 (420x297mm) em paisagem.
+        // Capture Body
+        const bodyCanvas = await html2canvas(bodyWrapper, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false
+        });
+        const bodyImgData = bodyCanvas.toDataURL('image/png');
+        
+        // PDF Setup (A3 Landscape)
         const pdf = new jsPDF({
           orientation: 'landscape',
           unit: 'mm',
@@ -306,39 +298,54 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
         
-        const imgProps = pdf.getImageProperties(imgData);
-        const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        // Calculate Dimensions
+        const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
+        const bodyImgProps = pdf.getImageProperties(bodyImgData);
+        const bodyPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
         
-        let heightLeft = imgHeight;
-        let position = 0;
+        const pageContentHeight = pdfHeight - headerPdfHeight - 10; // 10mm margin bottom
 
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-        heightLeft -= pdfHeight;
+        let heightLeft = bodyPdfHeight;
+        let position = 0; // Position within the source body image
 
+        // --- Page Loop ---
         while (heightLeft > 0) {
-          position = heightLeft - imgHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-          heightLeft -= pdfHeight;
+             // Draw Fixed Header at Top
+             pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
+             
+             const printY = headerPdfHeight - position;
+             
+             // Add Body Image (allowing overlap/crop logic handled by PDF viewer mostly, or simple placement)
+             pdf.addImage(bodyImgData, 'PNG', 0, printY, pdfWidth, bodyPdfHeight);
+             
+             // Mask the top area (where the body image might bleed up into the header on subsequent pages)
+             // Re-drawing the header cleanly over it ensures no visual glitches.
+             pdf.setFillColor(255, 255, 255);
+             // Create a white box exactly where the header is to clear any underlying body bits
+             pdf.rect(0, 0, pdfWidth, headerPdfHeight, 'F'); 
+             // Redraw header
+             pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
+             
+             heightLeft -= pageContentHeight;
+             position += pageContentHeight;
+             
+             if (heightLeft > 0) {
+                 pdf.addPage();
+             }
         }
 
-        // Abre o PDF em uma nova aba ao invés de baixar.
-        const pdfUrl = pdf.output('bloburl');
-        window.open(pdfUrl, '_blank');
+        window.open(pdf.output('bloburl'), '_blank');
 
       } catch (e) {
         console.error('Erro ao gerar o PDF:', e);
         alert('Ocorreu um erro ao gerar o PDF. Tente novamente.');
       } finally {
-        // 7. Remove o contêiner temporário do corpo do documento.
-        document.body.removeChild(pdfContainer);
+        document.body.removeChild(tempContainer);
         setIsGeneratingPdf(false);
       }
     });
   };
   
-  // Verifica se há aulas em algum dia
-  // Agora exibimos o cronograma mesmo se não houver aulas, pois queremos mostrar "Horário Livre"
   const hasClasses = schedule && schedule.length > 0;
 
   if (!hasClasses) {

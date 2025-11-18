@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="pt-BR">
   <head>
@@ -48,8 +49,6 @@
         left: -9999px;
         top: 0;
         background-color: #ffffff !important;
-        padding: 40px !important;
-        width: 1600px !important; /* A3 Landscape Width approx */
         font-family: sans-serif;
         color: #000000 !important;
         -webkit-print-color-adjust: exact !important;
@@ -62,59 +61,16 @@
         text-shadow: none !important;
       }
 
-      /* Header and Logos */
-      .pdf-watermark {
-        position: absolute;
-        right: 40px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 500px !important; /* Fixed width to prevent distortion */
-        height: auto !important; /* Maintain aspect ratio */
-        opacity: 0.03;
-        z-index: 0;
-        filter: grayscale(100%);
-      }
-
       .pdf-header {
-        position: relative;
-        z-index: 1;
-        display: flex !important;
-        justify-content: space-between !important;
-        align-items: center !important;
-        margin-bottom: 1rem;
-        padding-bottom: 1rem;
-        border-bottom: 3px solid #CE0058 !important; /* Brand Pink Line */
+         display: flex !important;
+         justify-content: space-between !important;
+         align-items: center !important;
       }
 
-      .pdf-header-left {
-        display: flex !important;
-        align-items: center !important;
-      }
-
-      .pdf-header .pdf-logo {
-        height: 50px !important;
-        filter: none !important; 
-      }
-      
-      .pdf-header-right {
-        text-align: right !important;
-        display: flex !important;
-        flex-direction: column !important;
-        align-items: flex-end !important;
-      }
-
-      .pdf-coord-title {
-        color: #CE0058 !important;
-        font-weight: 800 !important;
-        font-size: 0.9rem !important;
-        text-transform: uppercase !important;
-        margin-bottom: 4px !important;
-      }
-
-      .pdf-coord-names {
-        color: #4b5563 !important; /* gray-600 */
-        font-size: 0.75rem !important;
-        font-weight: 600 !important;
+      .pdf-header img {
+         object-fit: contain !important;
+         max-height: 50px !important;
+         width: auto !important;
       }
 
       .pdf-title {

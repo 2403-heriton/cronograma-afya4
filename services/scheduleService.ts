@@ -11,7 +11,6 @@ const ELETIVAS_KEY = 'afya-schedule-eletivas';
 
 // Helper to interpret dates in DD/MM/AAAA format safely
 export const parseBrDate = (dateString: string): Date => {
-  // Return a very early date if the string is invalid, so it doesn't crash and sorts predictably.
   if (!dateString || typeof dateString !== 'string') {
     return new Date(0);
   }
@@ -20,58 +19,45 @@ export const parseBrDate = (dateString: string): Date => {
     return new Date(0);
   }
   const [day, month, year] = parts.map(Number);
-  // Basic validation
   if (isNaN(day) || isNaN(month) || isNaN(year) || year < 1970 || month < 1 || month > 12 || day < 1 || day > 31) {
     return new Date(0);
   }
-  // The month is 0-indexed in the JS Date constructor
   const date = new Date(year, month - 1, day);
-  // Check for invalid date creations (e.g., new Date('2024', 1, 30) for Feb 30)
   if (isNaN(date.getTime())) {
     return new Date(0);
   }
   return date;
 };
 
-// Helper to format Excel time values (serial numbers, Date objects, or strings) into HH:mm format.
 const formatExcelTime = (value: any): string => {
     if (value instanceof Date) {
-        // Usa getHours() e getMinutes() para evitar problemas de fuso horário,
-        // garantindo que a hora seja lida como está na planilha.
         const hours = String(value.getHours()).padStart(2, '0');
         const minutes = String(value.getMinutes()).padStart(2, '0');
         return `${hours}:${minutes}`;
     }
     if (typeof value === 'number') {
-        // Fallback for when the value is a number but not parsed as a date.
         return XLSX.SSF.format('hh:mm', value);
     }
-    // Fallback for values that are already strings or other types.
     return String(value ?? '').trim();
 };
 
-// Helper to format Excel date values (serial numbers, Date objects, or strings) into DD/MM/YYYY format.
 const formatExcelDate = (value: any): string => {
-    if (!value) return ''; // Retorna string vazia para valores nulos ou indefinidos
+    if (!value) return '';
     if (value instanceof Date) {
         const day = String(value.getUTCDate()).padStart(2, '0');
-        const month = String(value.getUTCMonth() + 1).padStart(2, '0'); // getUTCMonth is 0-indexed
+        const month = String(value.getUTCMonth() + 1).padStart(2, '0');
         const year = value.getUTCFullYear();
         return `${day}/${month}/${year}`;
     }
     if (typeof value === 'number') {
-        // Fallback for when the value is a number but not parsed as a date.
         return XLSX.SSF.format('dd/mm/yyyy', value);
     }
-    // Fallback for values that are already strings or other types.
     return String(value ?? '').trim();
 };
 
-
-// Normaliza o dia da semana para um formato padrão, tornando o sistema robusto a variações de entrada.
 const normalizeDayOfWeek = (day: string): string => {
     if (!day) return '';
-    const d = day.toLowerCase().replace(/[- ]/g, '').trim(); // Ex: "terça-feira" -> "terçafeira"
+    const d = day.toLowerCase().replace(/[- ]/g, '').trim();
     if (d.startsWith('segunda')) return 'Segunda-feira';
     if (d.startsWith('terca') || d.startsWith('terça')) return 'Terça-feira';
     if (d.startsWith('quarta')) return 'Quarta-feira';
@@ -79,29 +65,23 @@ const normalizeDayOfWeek = (day: string): string => {
     if (d.startsWith('sexta')) return 'Sexta-feira';
     if (d.startsWith('sabado') || d.startsWith('sábado')) return 'Sábado';
     if (d.startsWith('domingo')) return 'Domingo';
-    return day; // Retorna o original se não houver correspondência
+    return day;
 };
 
-// Normaliza a string do período para apenas o número, tornando a correspondência robusta.
 const normalizePeriodo = (periodo: string): string => {
     if (!periodo) return '';
     const match = String(periodo).match(/\d+/);
     if (match) {
         return match[0];
     }
-    // Retorna a string em minúsculas se for algo como "Geral"
     return String(periodo).trim().toLowerCase();
 }
-
 
 export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], events: Event[], eletivas: EletivaEntry[] }> => {
     let finalAulas: any[];
     let finalEvents: any[];
     let finalEletivas: any[];
 
-    // --- Lógica de Carregamento em Cascata ---
-
-    // 1. Tenta buscar da rede
     let networkAulas: any[] | null = null;
     let networkEvents: any[] | null = null;
     let networkEletivas: any[] | null = null;
@@ -115,7 +95,6 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
             fetch(`/eletivas.json${cacheBuster}`),
         ]);
 
-        // Processa Aulas: só considera válido se a requisição for bem-sucedida E o array não for vazio.
         if (aulasRes.ok) {
             const data = await aulasRes.json();
             if (Array.isArray(data) && data.length > 0) {
@@ -123,7 +102,6 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
             }
         }
         
-        // Processa Eventos e Avaliações
         const combinedEvents: any[] = [];
         if (eventosRes.ok) {
             const data = await eventosRes.json();
@@ -133,15 +111,12 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
             const data = await avaliacoesRes.json();
             if (Array.isArray(data)) combinedEvents.push(...data);
         }
-        // Apenas considera os dados da rede válidos se eles não estiverem vazios.
         if (combinedEvents.length > 0) {
             networkEvents = combinedEvents;
         }
 
-        // Processa Eletivas
         if (eletivasRes.ok) {
             const data = await eletivasRes.json();
-            // Apenas considera os dados da rede válidos se eles não estiverem vazios.
             if (Array.isArray(data) && data.length > 0) {
                  networkEletivas = data;
             }
@@ -151,7 +126,6 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
         console.warn("Falha na busca de dados da rede. Tentando fallback para o cache local.", error);
     }
 
-    // 2. Decide a fonte de dados final para AULAS (fonte principal)
     if (networkAulas) {
         finalAulas = networkAulas;
         localStorage.setItem(AULAS_KEY, JSON.stringify(finalAulas));
@@ -165,12 +139,11 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
                 finalAulas = defaultAulas;
             }
         } catch (e) {
-            localStorage.removeItem(AULAS_KEY); // Limpa cache corrompido
+            localStorage.removeItem(AULAS_KEY);
             finalAulas = defaultAulas;
         }
     }
 
-    // 3. Decide a fonte final para EVENTOS
     if (networkEvents) {
         finalEvents = networkEvents;
         localStorage.setItem(EVENTS_KEY, JSON.stringify(finalEvents));
@@ -189,7 +162,6 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
         }
     }
     
-    // 4. Decide a fonte final para ELETIVAS
      if (networkEletivas) {
         finalEletivas = networkEletivas;
         localStorage.setItem(ELETIVAS_KEY, JSON.stringify(finalEletivas));
@@ -208,7 +180,6 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
         }
     }
 
-    // --- Higienização dos Dados ---
     const aulas: AulaEntry[] = finalAulas.map((row: any) => {
         const obsKey = Object.keys(row).find(k => {
             const lowerK = k.toLowerCase().trim();
@@ -256,15 +227,15 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
     return { aulas, events, eletivas };
 }
 
-// Helper to verify if a group name is Numeric or Alphabetic
 const isNumericGroup = (groupName: string): boolean => {
-    return /\d/.test(groupName); // Returns true if contains any digit
+    return /\d/.test(groupName);
 };
+
+const getCleanGroupName = (g: string) => g.replace(/^(GRUPO|Grupo)\s*-\s*|^(GRUPO|Grupo)\s+|^(TURMA|Turma)\s+/i, '').trim();
 
 const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
     const weekOrder = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
     
-    // Limites do dia letivo (08:00 - 22:00)
     const DAY_START_MIN = 8 * 60;
     const DAY_END_MIN = 22 * 60;
 
@@ -275,12 +246,10 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
         return hours * 60 + minutes;
     };
 
-    // Helper para calcular lacunas dado um conjunto de intervalos ocupados
     const calculateGaps = (intervals: {start: number, end: number}[], dayStart: number, dayEnd: number): {start: number, end: number}[] => {
         const minGap = 30;
-        if (intervals.length === 0) return [{start: dayStart, end: dayEnd}]; // Dia todo livre
+        if (intervals.length === 0) return [{start: dayStart, end: dayEnd}];
         
-        // Ordena e funde intervalos ocupados
         intervals.sort((a, b) => a.start - b.start);
         const mergedOccupied: {start: number, end: number}[] = [];
         let current = intervals[0];
@@ -296,12 +265,10 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
 
         const gaps: {start: number, end: number}[] = [];
 
-        // Buraco no início
         if (mergedOccupied[0].start - dayStart > minGap) {
             gaps.push({start: dayStart, end: mergedOccupied[0].start});
         }
 
-        // Buracos no meio
         for(let i=0; i < mergedOccupied.length - 1; i++) {
             const gapStart = mergedOccupied[i].end;
             const gapEnd = mergedOccupied[i+1].start;
@@ -310,7 +277,6 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
             }
         }
 
-        // Buraco no fim
         if (dayEnd - mergedOccupied[mergedOccupied.length -1].end > minGap) {
             gaps.push({start: mergedOccupied[mergedOccupied.length -1].end, end: dayEnd});
         }
@@ -324,11 +290,9 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
         return `${h}:${m}`;
     };
 
-
     const finalSchedule: Schedule = weekOrder.map(dayName => {
         const dayEntries = aulas.filter(a => a.dia_semana === dayName);
         
-        // Agrupamento por Disciplina para exibição
         const disciplineGroups: { [key: string]: AulaEntry[] } = {};
         dayEntries.forEach(entry => {
             const key = entry.disciplina; 
@@ -341,7 +305,7 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
         let dayAulas: Aula[] = Object.keys(disciplineGroups).map(disciplineKey => {
             const groupEntries = disciplineGroups[disciplineKey];
             
-            const subSessions: AulaGroupDetail[] = groupEntries.map(entry => {
+            const initialSubSessions: AulaGroupDetail[] = groupEntries.map(entry => {
                  const startMin = parseMinutes(entry.horario_inicio);
                  const endMin = parseMinutes(entry.horario_fim);
                  return {
@@ -356,17 +320,47 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
                 };
             });
 
-            subSessions.sort((a, b) => a.startMinutes - b.startMinutes);
+            // === GROUP MERGING LOGIC ===
+            initialSubSessions.sort((a, b) => a.startMinutes - b.startMinutes);
+            
+            const mergedSubSessions: AulaGroupDetail[] = [];
+            const mergeMap = new Map<string, number>();
 
-            const earliestStart = subSessions.length > 0 ? subSessions[0].horario.split(' às ')[0] : '';
-            const latestEnd = subSessions.length > 0 ? subSessions[subSessions.length - 1].horario.split(' às ')[1] : '';
+            initialSubSessions.forEach(session => {
+                const key = `${session.startMinutes}-${session.endMinutes}-${session.sala.trim().toLowerCase()}`;
+                const cleanGroup = getCleanGroupName(session.grupo);
+                
+                if (mergeMap.has(key)) {
+                    const idx = mergeMap.get(key)!;
+                    const existing = mergedSubSessions[idx];
+                    
+                    const currentGroups = existing.grupo.split(', ');
+                    if (!currentGroups.includes(cleanGroup)) {
+                        currentGroups.push(cleanGroup);
+                        currentGroups.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+                        existing.grupo = currentGroups.join(', ');
+                    }
+                    if (session.professor && session.professor !== 'A definir' && !existing.professor.includes(session.professor)) {
+                        existing.professor += ` / ${session.professor}`;
+                    }
+                } else {
+                    const newSession = { ...session, grupo: cleanGroup };
+                    const idx = mergedSubSessions.push(newSession) - 1;
+                    mergeMap.set(key, idx);
+                }
+            });
+            
+            mergedSubSessions.sort((a, b) => a.startMinutes - b.startMinutes);
+
+            const earliestStart = mergedSubSessions.length > 0 ? mergedSubSessions[0].horario.split(' às ')[0] : '';
+            const latestEnd = mergedSubSessions.length > 0 ? mergedSubSessions[mergedSubSessions.length - 1].horario.split(' às ')[1] : '';
             const modulo = groupEntries[0].modulo;
 
             return {
                 disciplina: disciplineKey,
                 modulo: modulo,
                 horario: `${earliestStart} - ${latestEnd}`,
-                subSessions: subSessions,
+                subSessions: mergedSubSessions,
                 observacao: ''
             };
         });
@@ -377,8 +371,6 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
             return startA - startB;
         });
 
-        // --- Lógica Avançada de Intervalos (Horários Livres) ---
-        // Separa as entradas por tipo de grupo (Numérico vs Alfabético)
         const numericEntries = dayEntries.filter(e => isNumericGroup(e.grupo));
         const alphaEntries = dayEntries.filter(e => !isNumericGroup(e.grupo));
         
@@ -394,40 +386,35 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
 
         const freeSlots: Aula[] = [];
 
-        // Helper para criar objeto Aula de slot livre
         const createFreeSlot = (start: number, end: number, typeLabel: string): Aula => ({
             isFreeSlot: true,
             disciplina: 'Horário Livre',
             modulo: '',
             horario: `${formatTime(start)} - ${formatTime(end)}`,
             subSessions: [],
-            observacao: typeLabel // Usado para exibir "Grupos Numéricos" etc.
+            observacao: typeLabel
         });
 
         if (hasBoth) {
-            // Se ambos os tipos existem no dia, precisamos cruzar os gaps.
             const processedNumericIndices = new Set<number>();
             const processedAlphaIndices = new Set<number>();
 
-            // 1. Encontrar Gaps coincidentes (Geral)
             numericGaps.forEach((nGap, nIdx) => {
                 alphaGaps.forEach((aGap, aIdx) => {
                     if (nGap.start === aGap.start && nGap.end === aGap.end) {
-                        freeSlots.push(createFreeSlot(nGap.start, nGap.end, '')); // Geral (sem obs)
+                        freeSlots.push(createFreeSlot(nGap.start, nGap.end, ''));
                         processedNumericIndices.add(nIdx);
                         processedAlphaIndices.add(aIdx);
                     }
                 });
             });
 
-            // 2. Adicionar Gaps exclusivos Numéricos
             numericGaps.forEach((gap, idx) => {
                 if (!processedNumericIndices.has(idx)) {
                     freeSlots.push(createFreeSlot(gap.start, gap.end, 'Grupos Numéricos'));
                 }
             });
 
-            // 3. Adicionar Gaps exclusivos Alfabéticos
             alphaGaps.forEach((gap, idx) => {
                 if (!processedAlphaIndices.has(idx)) {
                     freeSlots.push(createFreeSlot(gap.start, gap.end, 'Grupos Alfabéticos'));
@@ -435,19 +422,12 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
             });
 
         } else {
-            // Se só existe um tipo (ou nenhum), os gaps calculados são "Gerais" para aquele contexto.
-            // Se não houver nenhuma aula (ambos vazios), numericGaps/alphaGaps estariam vazios pela lógica acima,
-            // mas o DiaCard trata dias vazios separadamente. 
-            // Se houver apenas Numérico, usamos gaps numéricos como Gerais.
-            // Se houver apenas Alfabético, usamos gaps alfabéticos como Gerais.
-            
             const activeGaps = hasNumeric ? numericGaps : (hasAlpha ? alphaGaps : []);
             activeGaps.forEach(gap => {
                 freeSlots.push(createFreeSlot(gap.start, gap.end, ''));
             });
         }
         
-        // Adiciona os slots livres e reordena tudo
         dayAulas = [...dayAulas, ...freeSlots].sort((a, b) => {
              const getStartFromStr = (str: string) => {
                 const parts = str.split(' - ')[0].split(':');
@@ -469,32 +449,28 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
     return finalSchedule;
 };
 
-
 export const fetchSchedule = (
     periodo: string, 
-    selections: Omit<ModuleSelection, 'id'>[], // Mantido para compatibilidade
-    selectedGroups: string[], // NOVO: Filtro de grupos
+    selections: Omit<ModuleSelection, 'id'>[], 
+    selectedGroups: string[], 
     selectedEletivas: string[],
     allAulas: AulaEntry[],
     allEletivas: EletivaEntry[]
 ): Schedule | null => {
-    // 1. Filtra Aulas Principais apenas pelo Período
     let matchingAulas = allAulas.filter(aula => 
         String(aula.periodo) === String(periodo)
     );
 
-    // 1.5. Se houver grupos selecionados, filtra também por grupo
     if (selectedGroups.length > 0) {
         matchingAulas = matchingAulas.filter(aula => selectedGroups.includes(aula.grupo));
     }
 
-    // 2. Adiciona Eletivas Selecionadas (independentemente do período ou filtro de grupo da turma, pois eletivas são específicas)
     const matchingEletivasAsAulaEntries: AulaEntry[] = allEletivas
         .filter(eletiva => selectedEletivas.includes(eletiva.disciplina))
         .map((eletiva): AulaEntry => ({
             periodo: periodo,
             modulo: 'Eletiva',
-            grupo: 'Eletiva', // Grupo genérico para eletivas
+            grupo: 'Eletiva',
             dia_semana: eletiva.dia_semana,
             disciplina: eletiva.disciplina,
             sala: eletiva.sala,
@@ -509,7 +485,6 @@ export const fetchSchedule = (
 
     return groupAulasIntoSchedule(combinedAulas);
 };
-
 
 export const getUniqueModulesForPeriod = (periodo: string, allAulas: AulaEntry[]): string[] => {
     const modulesForPeriod = allAulas
@@ -526,16 +501,8 @@ export const fetchEvents = (periodo: string, selections: Omit<ModuleSelection, '
     
     const matchingEvents = allEvents.filter(event => {
         const normalizedEventPeriodo = normalizePeriodo(event.periodo);
-        
-        // Evento é "Geral" se o período dele for 'geral'.
         const isGeneralEvent = normalizedEventPeriodo === 'geral';
-
-        // Evento é específico do período se o período normalizado corresponder.
         const isPeriodMatch = normalizedEventPeriodo === normalizedSelectedPeriodo;
-
-        // Como estamos mostrando TUDO do período, removemos a filtragem por grupo específico.
-        // Se for do período, mostra.
-        
         return isGeneralEvent || isPeriodMatch;
     });
 
@@ -568,7 +535,6 @@ export const getUniquePeriods = (allAulas: AulaEntry[]): string[] => {
     return uniquePeriods;
 };
 
-// Função para obter grupos únicos de um período (para o filtro de grupos)
 export const getUniqueGroupsForPeriod = (periodo: string, allAulas: AulaEntry[]): string[] => {
     const groups = allAulas
         .filter(entry => String(entry.periodo) === String(periodo))
@@ -576,7 +542,6 @@ export const getUniqueGroupsForPeriod = (periodo: string, allAulas: AulaEntry[])
     
     const uniqueGroups = [...new Set(groups)];
     
-    // Reutiliza a lógica de ordenação de grupos
     uniqueGroups.sort((a, b) => {
         const extractPart = (s: string) => s.split('-').pop()?.trim() || s;
         const partA = extractPart(a);
@@ -623,7 +588,6 @@ export const getUniqueEletivas = (allEletivas: EletivaEntry[]): string[] => {
     return uniqueEletivas;
 };
 
-
 export const updateDataFromExcel = async (file: File): Promise<{ aulasData: AulaEntry[], eventsData: Event[], eletivasData: EletivaEntry[], eventsSheetName: string | undefined }> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -634,7 +598,7 @@ export const updateDataFromExcel = async (file: File): Promise<{ aulasData: Aula
                 
                 const aulasSheet = workbook.Sheets['Aulas'];
                 const eletivasSheet = workbook.Sheets['Eletivas'];
-                const eventosSheetName = workbook.SheetNames.find(name => {
+                const eventosSheetName = workbook.SheetNames.find((name: string) => {
                     const lowerCaseName = name.toLowerCase().trim();
                     return lowerCaseName === 'eventos' || lowerCaseName === 'avaliações';
                 });
@@ -644,7 +608,6 @@ export const updateDataFromExcel = async (file: File): Promise<{ aulasData: Aula
                   return reject(new Error("Aba 'Aulas' não encontrada na planilha."));
                 }
                 
-                // Processa as linhas com chaves case-insensitive
                 const processRows = (sheet: any) => {
                     if (!sheet) return [];
                     const rawData = XLSX.utils.sheet_to_json(sheet);
@@ -707,7 +670,6 @@ export const updateDataFromExcel = async (file: File): Promise<{ aulasData: Aula
                     }));
                 }
 
-                // Validação de cabeçalhos
                 if (aulasData.length > 0 && (!aulasData[0].dia_semana || !aulasData[0].horario_inicio)) {
                     return reject(new Error("Formato incorreto na aba 'Aulas'. Verifique os cabeçalhos das colunas."));
                 }
