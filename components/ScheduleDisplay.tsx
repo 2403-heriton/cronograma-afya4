@@ -27,25 +27,31 @@ const ObservacaoDisplay: React.FC<{ text: string }> = ({ text }) => {
 
 // Card para horários livres / intervalos
 const FreeSlotCard: React.FC<{ aula?: Aula; isFullDay?: boolean }> = ({ aula, isFullDay }) => (
-  <div className={`bg-green-50/5 border border-green-200/20 rounded-lg flex items-center justify-center text-green-200/80 shadow-sm free-slot-card ${isFullDay ? 'flex-col p-6 h-40 gap-2' : 'p-3 gap-3'}`}>
-     <CoffeeIcon className={`${isFullDay ? 'w-8 h-8' : 'w-5 h-5'} opacity-70`} />
-     <div className="flex flex-col items-center">
-        <span className={`font-medium tracking-wide ${isFullDay ? 'text-lg' : 'text-sm'}`}>Horário Livre</span>
-        {isFullDay ? (
-           <span className="text-xs opacity-60 mt-1">Dia sem atividades agendadas</span>
-        ) : (
-           aula && (
-            <>
-                <span className="text-xs opacity-70">({aula.horario})</span>
-                {aula.observacao && (
-                    <span className="text-[10px] uppercase tracking-wider font-semibold opacity-50 mt-1 text-green-200">
-                        {aula.observacao}
-                    </span>
-                )}
-            </>
-           )
-        )}
+  <div className={`bg-green-50/5 border border-green-200/20 rounded-lg flex flex-col items-center justify-center text-green-200/80 shadow-sm free-slot-card ${isFullDay ? 'p-6 h-40 gap-2' : 'p-3 gap-2'}`}>
+     <div className="flex items-center gap-2 opacity-80">
+         <CoffeeIcon className={`${isFullDay ? 'w-8 h-8' : 'w-5 h-5'}`} />
+         <span className={`font-medium tracking-wide ${isFullDay ? 'text-lg' : 'text-sm'}`}>Horário Livre</span>
      </div>
+     
+     {isFullDay ? (
+        <span className="text-xs opacity-60 mt-1">Dia sem atividades agendadas</span>
+     ) : (
+        aula && (
+         <div className="flex flex-col items-center w-full">
+             <span className="text-xs opacity-90 font-semibold mb-1">{aula.horario}</span>
+             {aula.observacao && (
+                 <div className="mt-1 w-full border-t border-green-200/20 pt-1 text-center">
+                     <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 block text-xs">
+                        PARA:
+                     </span>
+                     <span className="text-xs font-bold text-green-100 group-target">
+                         {aula.observacao}
+                     </span>
+                 </div>
+             )}
+         </div>
+        )
+     )}
   </div>
 );
 
@@ -214,7 +220,6 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     tempContainer.className = 'pdf-export-container';
     
     // 1a. Create Header Element
-    // Use innerHTML for complex layout to ensure styles are applied correctly for html2canvas
     const headerWrapper = document.createElement('div');
     headerWrapper.style.backgroundColor = '#ffffff';
     headerWrapper.style.padding = '20px 40px 0 40px';
@@ -254,6 +259,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     
     // Assemble Body Capture Container (Title + Grid)
     const bodyWrapper = document.createElement('div');
+    bodyWrapper.id = 'pdf-body-wrapper'; // ID for DOM query during safe slicing
     bodyWrapper.style.backgroundColor = '#ffffff';
     bodyWrapper.style.padding = '10px 40px 40px 40px';
     bodyWrapper.style.width = '1600px';
@@ -264,7 +270,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     tempContainer.appendChild(bodyWrapper);
     document.body.appendChild(tempContainer);
 
-    // --- 2. Generate PDF ---
+    // --- 2. Generate PDF with Safe Slicing ---
     requestAnimationFrame(async () => {
       try {
         const { jsPDF } = window.jspdf;
@@ -280,6 +286,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         const headerImgProps = new jsPDF().getImageProperties(headerImgData);
 
         // Capture Body
+        // Note: We capture the entire long body once.
         const bodyCanvas = await html2canvas(bodyWrapper, {
           scale: 2,
           useCORS: true,
@@ -298,43 +305,128 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
 
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
+        const ratio = pdfWidth / bodyImgProps.width; // Scale ratio from canvas pixels to PDF mm
         
-        // Calculate Dimensions
+        // Dimensions in PDF units (mm)
         const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
-        const bodyPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
+        const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
         
-        let heightLeft = bodyPdfHeight;
-        let sourceY = 0; // Vertical position in the source image
+        // Dimensions in Canvas units (pixels) - used for collision detection
+        const scaleFactor = 2; // HTML2Canvas scale
+        const domToCanvasRatio = scaleFactor; 
+        
+        // Scan the DOM to find all potential cut-points (cards)
+        // We need their positions relative to the bodyWrapper top
+        const cards = Array.from(bodyWrapper.querySelectorAll('.aula-card, .free-slot-card'));
+        const cardPositions = cards.map(card => {
+            const rect = card.getBoundingClientRect();
+            const wrapperRect = bodyWrapper.getBoundingClientRect();
+            return {
+                top: rect.top - wrapperRect.top,
+                bottom: rect.bottom - wrapperRect.top,
+                height: rect.height
+            };
+        });
+
+        let currentSourcePdfY = 0; // Current Y position in the source image (in PDF mm equivalents)
 
         // --- Page 1 ---
-        // Draw Header at top
+        // Draw Header
         pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
         
-        // Calculate space for body on Page 1 (Header Height + 5mm Buffer + 10mm Bottom Margin)
-        const page1ContentTop = headerPdfHeight + 5;
-        const page1AvailableHeight = pdfHeight - page1ContentTop - 10;
+        const page1MarginTop = headerPdfHeight + 5;
+        const page1AvailableHeight = pdfHeight - page1MarginTop - 10; // 10mm bottom margin
 
-        // Add Body Image shifted down
-        // We place the image at 'page1ContentTop' and shifted up by 'sourceY' (which is 0)
-        pdf.addImage(bodyImgData, 'PNG', 0, page1ContentTop - sourceY, pdfWidth, bodyPdfHeight);
+        // Calculate Safe Cut for Page 1
+        let cutHeight = page1AvailableHeight;
+        const proposedCutY_mm = currentSourcePdfY + cutHeight;
+        
+        // Convert mm to pixels to check against DOM positions
+        // Since ratio = pdfWidth(mm) / canvasWidth(px)
+        // px = mm / ratio
+        const proposedCutY_px = proposedCutY_mm / ratio;
 
-        heightLeft -= page1AvailableHeight;
-        sourceY += page1AvailableHeight;
+        // Find collision
+        const collision = cardPositions.find(pos => 
+            pos.top < proposedCutY_px && pos.bottom > proposedCutY_px
+        );
+
+        if (collision) {
+            // If cutting through a card, stop just before it (with a 5mm buffer approx 15px)
+            const safeCutY_px = Math.max(0, collision.top - 10); 
+            const safeCutY_mm = safeCutY_px * ratio;
+            cutHeight = safeCutY_mm - currentSourcePdfY;
+        }
+
+        // Draw Body Slice for Page 1
+        // sourceY, sourceH, destX, destY, destW, destH
+        // addImage(data, fmt, x, y, w, h, alias, compression, rotation)
+        // But standard addImage doesn't crop. We must use a method to simulating cropping by shifting y.
+        // Actually, jsPDF simply pastes the whole image. We simulate "crop" by pasting the image shifted UP
+        // and masking the rest with a clipping rect (or simpler: let it overflow off-page if we weren't caring, but we care).
+        // Better approach for html2canvas+jspdf multipage without splitting image manually:
+        // Since we can't easily "crop" inside addImage without complexity, we stick to the "Shift Y" method.
+        // The "Shift Y" method works by placing the top of the *source image* at a calculated negative Y.
+        // e.g. to show the slice starting at 500px, we place the image at y = -500px (relative to the content area).
+
+        // Actually, simpler logic for standard usage:
+        // We know exactly how tall the content we WANT to show is (`cutHeight`).
+        // We place the image at (0, page1MarginTop - currentSourcePdfY).
+        // And we rely on the page break to hide the rest? No, content would overlap footer/margins.
+        // Ideally we use a clipping rect or multiple canvases. 
+        // Given the constraint, the "Shift Y" strategy is the most robust if we assume standard white bg covers previous pages.
+        // BUT, to be clean:
+        
+        // PAGE 1 DRAW
+        pdf.addImage(bodyImgData, 'PNG', 0, page1MarginTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
+        
+        // We must cover the area *below* the cut with a white box to "hide" the next page's content
+        // that might have spilled over into the margin area.
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, page1MarginTop + cutHeight, pdfWidth, pdfHeight - (page1MarginTop + cutHeight), 'F');
+
+        currentSourcePdfY += cutHeight;
 
         // --- Subsequent Pages ---
-        while (heightLeft > 0) {
+        while (currentSourcePdfY < bodyTotalPdfHeight - 1) { // tolerance
              pdf.addPage();
              
-             const pageTop = 10; // Top margin for subsequent pages
-             const pageAvailableHeight = pdfHeight - pageTop - 10; // Bottom margin
+             const pageTop = 10; 
+             const pageAvailableHeight = pdfHeight - pageTop - 10;
              
-             // Add Body Image
-             // We position the image such that the pixel at 'sourceY' aligns with 'pageTop'.
-             // Therefore, Image Y = pageTop - sourceY
-             pdf.addImage(bodyImgData, 'PNG', 0, pageTop - sourceY, pdfWidth, bodyPdfHeight);
+             // Calculate Safe Cut
+             let nextCutHeight = pageAvailableHeight;
+             const nextProposedCutY_mm = currentSourcePdfY + nextCutHeight;
+             const nextProposedCutY_px = nextProposedCutY_mm / ratio;
              
-             heightLeft -= pageAvailableHeight;
-             sourceY += pageAvailableHeight;
+             const nextCollision = cardPositions.find(pos => 
+                pos.top < nextProposedCutY_px && pos.bottom > nextProposedCutY_px
+             );
+             
+             if (nextCollision) {
+                 const safeCutY_px = Math.max(0, nextCollision.top - 10);
+                 const safeCutY_mm = safeCutY_px * ratio;
+                 nextCutHeight = safeCutY_mm - currentSourcePdfY;
+             }
+
+             // Draw content shifted up
+             // Image starts at 'pageTop' visually, so we subtract currentSourcePdfY
+             pdf.addImage(bodyImgData, 'PNG', 0, pageTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
+             
+             // White-out the bottom margin area to hide spillover
+             if (pageTop + nextCutHeight < pdfHeight) {
+                 pdf.setFillColor(255, 255, 255);
+                 pdf.rect(0, pageTop + nextCutHeight, pdfWidth, pdfHeight - (pageTop + nextCutHeight), 'F');
+             }
+             
+             // White-out the top margin area (to hide previous content that was shifted up)
+             pdf.setFillColor(255, 255, 255);
+             pdf.rect(0, 0, pdfWidth, pageTop, 'F');
+
+             currentSourcePdfY += nextCutHeight;
+             
+             // Break loop if we are stuck (no progress)
+             if (nextCutHeight <= 0) break;
         }
 
         window.open(pdf.output('bloburl'), '_blank');
