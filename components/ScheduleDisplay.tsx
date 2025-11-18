@@ -287,6 +287,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
           logging: false
         });
         const bodyImgData = bodyCanvas.toDataURL('image/png');
+        const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
         
         // PDF Setup (A3 Landscape)
         const pdf = new jsPDF({
@@ -300,38 +301,40 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         
         // Calculate Dimensions
         const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
-        const bodyImgProps = pdf.getImageProperties(bodyImgData);
         const bodyPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
         
-        const pageContentHeight = pdfHeight - headerPdfHeight - 10; // 10mm margin bottom
-
         let heightLeft = bodyPdfHeight;
-        let position = 0; // Position within the source body image
+        let sourceY = 0; // Vertical position in the source image
 
-        // --- Page Loop ---
+        // --- Page 1 ---
+        // Draw Header at top
+        pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
+        
+        // Calculate space for body on Page 1 (Header Height + 5mm Buffer + 10mm Bottom Margin)
+        const page1ContentTop = headerPdfHeight + 5;
+        const page1AvailableHeight = pdfHeight - page1ContentTop - 10;
+
+        // Add Body Image shifted down
+        // We place the image at 'page1ContentTop' and shifted up by 'sourceY' (which is 0)
+        pdf.addImage(bodyImgData, 'PNG', 0, page1ContentTop - sourceY, pdfWidth, bodyPdfHeight);
+
+        heightLeft -= page1AvailableHeight;
+        sourceY += page1AvailableHeight;
+
+        // --- Subsequent Pages ---
         while (heightLeft > 0) {
-             // Draw Fixed Header at Top
-             pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
+             pdf.addPage();
              
-             const printY = headerPdfHeight - position;
+             const pageTop = 10; // Top margin for subsequent pages
+             const pageAvailableHeight = pdfHeight - pageTop - 10; // Bottom margin
              
-             // Add Body Image (allowing overlap/crop logic handled by PDF viewer mostly, or simple placement)
-             pdf.addImage(bodyImgData, 'PNG', 0, printY, pdfWidth, bodyPdfHeight);
+             // Add Body Image
+             // We position the image such that the pixel at 'sourceY' aligns with 'pageTop'.
+             // Therefore, Image Y = pageTop - sourceY
+             pdf.addImage(bodyImgData, 'PNG', 0, pageTop - sourceY, pdfWidth, bodyPdfHeight);
              
-             // Mask the top area (where the body image might bleed up into the header on subsequent pages)
-             // Re-drawing the header cleanly over it ensures no visual glitches.
-             pdf.setFillColor(255, 255, 255);
-             // Create a white box exactly where the header is to clear any underlying body bits
-             pdf.rect(0, 0, pdfWidth, headerPdfHeight, 'F'); 
-             // Redraw header
-             pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
-             
-             heightLeft -= pageContentHeight;
-             position += pageContentHeight;
-             
-             if (heightLeft > 0) {
-                 pdf.addPage();
-             }
+             heightLeft -= pageAvailableHeight;
+             sourceY += pageAvailableHeight;
         }
 
         window.open(pdf.output('bloburl'), '_blank');

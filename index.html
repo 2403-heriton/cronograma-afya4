@@ -227,6 +227,19 @@
          font-weight: 600 !important;
       }
 
+      /* PDF Watermark Style */
+      .pdf-watermark {
+         position: absolute;
+         top: 50%;
+         right: 50px;
+         transform: translateY(-50%);
+         opacity: 0.1;
+         width: 500px !important; /* Fixed width to prevent stretching */
+         height: auto !important; /* Auto height to maintain aspect ratio */
+         pointer-events: none;
+         z-index: 0;
+      }
+
       /* =========================================
          EVENTS PDF STYLES
          ========================================= */
