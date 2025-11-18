@@ -1,5 +1,5 @@
 
-import type { Schedule, DiaDeAula, ModuleSelection, Aula, Event, AulaEntry, EletivaEntry, AulaGroupDetail } from "../types";
+import type { Schedule, ModuleSelection, Aula, Event, AulaEntry, EletivaEntry, AulaGroupDetail } from "../types";
 import { defaultAulas, defaultEvents, defaultEletivas } from "./initialData";
 
 // Permite o uso da biblioteca XLSX carregada via tag de script
@@ -256,6 +256,10 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
     return { aulas, events, eletivas };
 }
 
+// Helper to verify if a group name is Numeric or Alphabetic
+const isNumericGroup = (groupName: string): boolean => {
+    return /\d/.test(groupName); // Returns true if contains any digit
+};
 
 const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
     const weekOrder = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
@@ -271,10 +275,60 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
         return hours * 60 + minutes;
     };
 
+    // Helper para calcular lacunas dado um conjunto de intervalos ocupados
+    const calculateGaps = (intervals: {start: number, end: number}[], dayStart: number, dayEnd: number): {start: number, end: number}[] => {
+        const minGap = 30;
+        if (intervals.length === 0) return [{start: dayStart, end: dayEnd}]; // Dia todo livre
+        
+        // Ordena e funde intervalos ocupados
+        intervals.sort((a, b) => a.start - b.start);
+        const mergedOccupied: {start: number, end: number}[] = [];
+        let current = intervals[0];
+        for(let i=1; i < intervals.length; i++) {
+            if (intervals[i].start < current.end) {
+                current.end = Math.max(current.end, intervals[i].end);
+            } else {
+                mergedOccupied.push(current);
+                current = intervals[i];
+            }
+        }
+        mergedOccupied.push(current);
+
+        const gaps: {start: number, end: number}[] = [];
+
+        // Buraco no início
+        if (mergedOccupied[0].start - dayStart > minGap) {
+            gaps.push({start: dayStart, end: mergedOccupied[0].start});
+        }
+
+        // Buracos no meio
+        for(let i=0; i < mergedOccupied.length - 1; i++) {
+            const gapStart = mergedOccupied[i].end;
+            const gapEnd = mergedOccupied[i+1].start;
+            if (gapEnd - gapStart > minGap) {
+                gaps.push({start: gapStart, end: gapEnd});
+            }
+        }
+
+        // Buraco no fim
+        if (dayEnd - mergedOccupied[mergedOccupied.length -1].end > minGap) {
+            gaps.push({start: mergedOccupied[mergedOccupied.length -1].end, end: dayEnd});
+        }
+        
+        return gaps;
+    };
+
+    const formatTime = (totalMinutes: number): string => {
+        const h = Math.floor(totalMinutes / 60).toString().padStart(2, '0');
+        const m = (totalMinutes % 60).toString().padStart(2, '0');
+        return `${h}:${m}`;
+    };
+
+
     const finalSchedule: Schedule = weekOrder.map(dayName => {
         const dayEntries = aulas.filter(a => a.dia_semana === dayName);
         
-        // Agrupamento por Disciplina
+        // Agrupamento por Disciplina para exibição
         const disciplineGroups: { [key: string]: AulaEntry[] } = {};
         dayEntries.forEach(entry => {
             const key = entry.disciplina; 
@@ -287,7 +341,6 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
         let dayAulas: Aula[] = Object.keys(disciplineGroups).map(disciplineKey => {
             const groupEntries = disciplineGroups[disciplineKey];
             
-            // Mapeia cada entrada para uma sub-sessão (mini-card)
             const subSessions: AulaGroupDetail[] = groupEntries.map(entry => {
                  const startMin = parseMinutes(entry.horario_inicio);
                  const endMin = parseMinutes(entry.horario_fim);
@@ -303,139 +356,108 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
                 };
             });
 
-            // Ordena as sub-sessões cronologicamente
             subSessions.sort((a, b) => a.startMinutes - b.startMinutes);
 
-            // Determina horários gerais para ordenação do card principal
             const earliestStart = subSessions.length > 0 ? subSessions[0].horario.split(' às ')[0] : '';
             const latestEnd = subSessions.length > 0 ? subSessions[subSessions.length - 1].horario.split(' às ')[1] : '';
-            
-            // Usa o módulo da primeira entrada
             const modulo = groupEntries[0].modulo;
 
             return {
                 disciplina: disciplineKey,
                 modulo: modulo,
-                horario: `${earliestStart} - ${latestEnd}`, // Apenas para referência ou ordenação
+                horario: `${earliestStart} - ${latestEnd}`,
                 subSessions: subSessions,
-                observacao: '' // Mantemos vazio para usar as observações individuais das sub-sessões
+                observacao: ''
             };
         });
 
-        // Ordena os cards do dia pelo horário de início da primeira sub-sessão
         dayAulas.sort((a, b) => {
             const startA = a.subSessions[0]?.startMinutes || 0;
             const startB = b.subSessions[0]?.startMinutes || 0;
             return startA - startB;
         });
 
-        // --- Lógica para identificar Intervalos (Horários Livres) ---
-        // Calcula a união de TODOS os horários ocupados neste dia (olhando para todas as sub-sessões)
-        const allIntervals: {start: number, end: number}[] = [];
-        dayAulas.forEach(aula => {
-            aula.subSessions.forEach(s => {
-                allIntervals.push({ start: s.startMinutes, end: s.endMinutes });
-            });
-        });
+        // --- Lógica Avançada de Intervalos (Horários Livres) ---
+        // Separa as entradas por tipo de grupo (Numérico vs Alfabético)
+        const numericEntries = dayEntries.filter(e => isNumericGroup(e.grupo));
+        const alphaEntries = dayEntries.filter(e => !isNumericGroup(e.grupo));
+        
+        const hasNumeric = numericEntries.length > 0;
+        const hasAlpha = alphaEntries.length > 0;
+        const hasBoth = hasNumeric && hasAlpha;
 
-        // Mescla intervalos sobrepostos para encontrar os blocos globais ocupados
-        const occupiedBlocks: {start: number, end: number}[] = [];
-        if (allIntervals.length > 0) {
-             allIntervals.sort((a, b) => a.start - b.start);
-             let current = allIntervals[0];
-             for(let i = 1; i < allIntervals.length; i++) {
-                 if (allIntervals[i].start < current.end) { // Sobreposição ou adjacência
-                     current.end = Math.max(current.end, allIntervals[i].end);
-                 } else {
-                     occupiedBlocks.push(current);
-                     current = allIntervals[i];
-                 }
-             }
-             occupiedBlocks.push(current);
-        }
+        const numericIntervals = numericEntries.map(e => ({ start: parseMinutes(e.horario_inicio), end: parseMinutes(e.horario_fim) }));
+        const alphaIntervals = alphaEntries.map(e => ({ start: parseMinutes(e.horario_inicio), end: parseMinutes(e.horario_fim) }));
+
+        const numericGaps = hasNumeric ? calculateGaps(numericIntervals, DAY_START_MIN, DAY_END_MIN) : [];
+        const alphaGaps = hasAlpha ? calculateGaps(alphaIntervals, DAY_START_MIN, DAY_END_MIN) : [];
 
         const freeSlots: Aula[] = [];
-        const minGap = 30; // Considerar horário livre se o gap for maior que 30 minutos
 
-        if (occupiedBlocks.length > 0) {
-            // 1. Verificar buraco no início do dia (08:00 até a primeira atividade)
-            if ((occupiedBlocks[0].start - DAY_START_MIN) > minGap) {
-                 const h1 = Math.floor(DAY_START_MIN / 60).toString().padStart(2, '0');
-                 const m1 = (DAY_START_MIN % 60).toString().padStart(2, '0');
-                 const h2 = Math.floor(occupiedBlocks[0].start / 60).toString().padStart(2, '0');
-                 const m2 = (occupiedBlocks[0].start % 60).toString().padStart(2, '0');
-                 
-                 freeSlots.push({
-                    isFreeSlot: true,
-                    disciplina: 'Horário Livre',
-                    modulo: '',
-                    horario: `${h1}:${m1} - ${h2}:${m2}`,
-                    subSessions: [],
-                    observacao: ''
-                 });
-            }
+        // Helper para criar objeto Aula de slot livre
+        const createFreeSlot = (start: number, end: number, typeLabel: string): Aula => ({
+            isFreeSlot: true,
+            disciplina: 'Horário Livre',
+            modulo: '',
+            horario: `${formatTime(start)} - ${formatTime(end)}`,
+            subSessions: [],
+            observacao: typeLabel // Usado para exibir "Grupos Numéricos" etc.
+        });
 
-            // 2. Verificar buracos entre blocos ocupados
-            for(let i = 0; i < occupiedBlocks.length - 1; i++) {
-                const gapStart = occupiedBlocks[i].end;
-                const gapEnd = occupiedBlocks[i+1].start;
-                
-                if ((gapEnd - gapStart) > minGap) {
-                    const h1 = Math.floor(gapStart / 60).toString().padStart(2, '0');
-                    const m1 = (gapStart % 60).toString().padStart(2, '0');
-                    const h2 = Math.floor(gapEnd / 60).toString().padStart(2, '0');
-                    const m2 = (gapEnd % 60).toString().padStart(2, '0');
+        if (hasBoth) {
+            // Se ambos os tipos existem no dia, precisamos cruzar os gaps.
+            const processedNumericIndices = new Set<number>();
+            const processedAlphaIndices = new Set<number>();
 
-                    freeSlots.push({
-                        isFreeSlot: true,
-                        disciplina: 'Horário Livre',
-                        modulo: '',
-                        horario: `${h1}:${m1} - ${h2}:${m2}`,
-                        subSessions: [],
-                        observacao: ''
-                    });
+            // 1. Encontrar Gaps coincidentes (Geral)
+            numericGaps.forEach((nGap, nIdx) => {
+                alphaGaps.forEach((aGap, aIdx) => {
+                    if (nGap.start === aGap.start && nGap.end === aGap.end) {
+                        freeSlots.push(createFreeSlot(nGap.start, nGap.end, '')); // Geral (sem obs)
+                        processedNumericIndices.add(nIdx);
+                        processedAlphaIndices.add(aIdx);
+                    }
+                });
+            });
+
+            // 2. Adicionar Gaps exclusivos Numéricos
+            numericGaps.forEach((gap, idx) => {
+                if (!processedNumericIndices.has(idx)) {
+                    freeSlots.push(createFreeSlot(gap.start, gap.end, 'Grupos Numéricos'));
                 }
-            }
+            });
 
-            // 3. Verificar buraco no fim do dia (última atividade até 22:00)
-            const lastBlockEnd = occupiedBlocks[occupiedBlocks.length - 1].end;
-            if ((DAY_END_MIN - lastBlockEnd) > minGap) {
-                 const h1 = Math.floor(lastBlockEnd / 60).toString().padStart(2, '0');
-                 const m1 = (lastBlockEnd % 60).toString().padStart(2, '0');
-                 const h2 = Math.floor(DAY_END_MIN / 60).toString().padStart(2, '0');
-                 const m2 = (DAY_END_MIN % 60).toString().padStart(2, '0');
+            // 3. Adicionar Gaps exclusivos Alfabéticos
+            alphaGaps.forEach((gap, idx) => {
+                if (!processedAlphaIndices.has(idx)) {
+                    freeSlots.push(createFreeSlot(gap.start, gap.end, 'Grupos Alfabéticos'));
+                }
+            });
 
-                 freeSlots.push({
-                    isFreeSlot: true,
-                    disciplina: 'Horário Livre',
-                    modulo: '',
-                    horario: `${h1}:${m1} - ${h2}:${m2}`,
-                    subSessions: [],
-                    observacao: ''
-                 });
-            }
         } else {
-            // Se não houver nenhuma aula no dia, é um dia totalmente livre (tratado no render)
+            // Se só existe um tipo (ou nenhum), os gaps calculados são "Gerais" para aquele contexto.
+            // Se não houver nenhuma aula (ambos vazios), numericGaps/alphaGaps estariam vazios pela lógica acima,
+            // mas o DiaCard trata dias vazios separadamente. 
+            // Se houver apenas Numérico, usamos gaps numéricos como Gerais.
+            // Se houver apenas Alfabético, usamos gaps alfabéticos como Gerais.
+            
+            const activeGaps = hasNumeric ? numericGaps : (hasAlpha ? alphaGaps : []);
+            activeGaps.forEach(gap => {
+                freeSlots.push(createFreeSlot(gap.start, gap.end, ''));
+            });
         }
-
+        
         // Adiciona os slots livres e reordena tudo
         dayAulas = [...dayAulas, ...freeSlots].sort((a, b) => {
-             if (a.isFreeSlot || b.isFreeSlot) {
-                // Helper simples para extrair inicio em minutos da string de horário "HH:MM - ..."
-                const getStartFromStr = (str: string) => {
-                    const parts = str.split(' - ')[0].split(':');
-                    if (parts.length === 2) return parseInt(parts[0])*60 + parseInt(parts[1]);
-                    return 0;
-                };
-                const startA = a.isFreeSlot ? getStartFromStr(a.horario) : (a.subSessions[0]?.startMinutes || 0);
-                const startB = b.isFreeSlot ? getStartFromStr(b.horario) : (b.subSessions[0]?.startMinutes || 0);
-                return startA - startB;
-             }
-             
-             // Comparação normal entre aulas
-             const startA = a.subSessions[0]?.startMinutes || 0;
-             const startB = b.subSessions[0]?.startMinutes || 0;
-             return startA - startB;
+             const getStartFromStr = (str: string) => {
+                const parts = str.split(' - ')[0].split(':');
+                if (parts.length === 2) return parseInt(parts[0])*60 + parseInt(parts[1]);
+                return 0;
+            };
+            
+            const startA = a.isFreeSlot ? getStartFromStr(a.horario) : (a.subSessions[0]?.startMinutes || 0);
+            const startB = b.isFreeSlot ? getStartFromStr(b.horario) : (b.subSessions[0]?.startMinutes || 0);
+            return startA - startB;
         });
 
         return {
@@ -450,17 +472,23 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
 
 export const fetchSchedule = (
     periodo: string, 
-    selections: Omit<ModuleSelection, 'id'>[], // Mantido para compatibilidade, mas não usado para filtro de aulas principais
+    selections: Omit<ModuleSelection, 'id'>[], // Mantido para compatibilidade
+    selectedGroups: string[], // NOVO: Filtro de grupos
     selectedEletivas: string[],
     allAulas: AulaEntry[],
     allEletivas: EletivaEntry[]
 ): Schedule | null => {
     // 1. Filtra Aulas Principais apenas pelo Período
-    const matchingAulas = allAulas.filter(aula => 
+    let matchingAulas = allAulas.filter(aula => 
         String(aula.periodo) === String(periodo)
     );
 
-    // 2. Adiciona Eletivas Selecionadas (independentemente do período selecionado, pois eletivas são específicas)
+    // 1.5. Se houver grupos selecionados, filtra também por grupo
+    if (selectedGroups.length > 0) {
+        matchingAulas = matchingAulas.filter(aula => selectedGroups.includes(aula.grupo));
+    }
+
+    // 2. Adiciona Eletivas Selecionadas (independentemente do período ou filtro de grupo da turma, pois eletivas são específicas)
     const matchingEletivasAsAulaEntries: AulaEntry[] = allEletivas
         .filter(eletiva => selectedEletivas.includes(eletiva.disciplina))
         .map((eletiva): AulaEntry => ({
@@ -540,6 +568,31 @@ export const getUniquePeriods = (allAulas: AulaEntry[]): string[] => {
     return uniquePeriods;
 };
 
+// Função para obter grupos únicos de um período (para o filtro de grupos)
+export const getUniqueGroupsForPeriod = (periodo: string, allAulas: AulaEntry[]): string[] => {
+    const groups = allAulas
+        .filter(entry => String(entry.periodo) === String(periodo))
+        .map(entry => entry.grupo);
+    
+    const uniqueGroups = [...new Set(groups)];
+    
+    // Reutiliza a lógica de ordenação de grupos
+    uniqueGroups.sort((a, b) => {
+        const extractPart = (s: string) => s.split('-').pop()?.trim() || s;
+        const partA = extractPart(a);
+        const partB = extractPart(b);
+        const isNumA = !isNaN(Number(partA));
+        const isNumB = !isNaN(Number(partB));
+        if (isNumA && isNumB) return Number(partA) - Number(partB);
+        if (!isNumA && !isNumB) return partA.localeCompare(partB);
+        if (isNumA) return 1;
+        if (isNumB) return -1;
+        return a.localeCompare(b);
+    });
+
+    return uniqueGroups;
+};
+
 export const getUniqueGroupsForModule = (periodo: string, modulo: string, allAulas: AulaEntry[]): string[] => {
     const groups = allAulas
         .filter(entry => String(entry.periodo) === String(periodo) && entry.modulo === modulo)
@@ -549,28 +602,14 @@ export const getUniqueGroupsForModule = (periodo: string, modulo: string, allAul
     
     uniqueGroups.sort((a, b) => {
         const extractPart = (s: string) => s.split('-').pop()?.trim() || s;
-        
         const partA = extractPart(a);
         const partB = extractPart(b);
-        
         const isNumA = !isNaN(Number(partA));
         const isNumB = !isNaN(Number(partB));
-        
-        // Se ambos são números, ordena do menor para o maior
-        if (isNumA && isNumB) {
-            return Number(partA) - Number(partB);
-        }
-        
-        // Se ambos são strings (letras), ordena de A a Z
-        if (!isNumA && !isNumB) {
-            return partA.localeCompare(partB);
-        }
-
-        // Se misturado, coloca letras antes de números
+        if (isNumA && isNumB) return Number(partA) - Number(partB);
+        if (!isNumA && !isNumB) return partA.localeCompare(partB);
         if (isNumA) return 1;
         if (isNumB) return -1;
-
-        // Fallback para o caso de algo inesperado
         return a.localeCompare(b);
     });
 

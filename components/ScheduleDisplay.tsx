@@ -33,7 +33,16 @@ const FreeSlotCard: React.FC<{ aula?: Aula; isFullDay?: boolean }> = ({ aula, is
         {isFullDay ? (
            <span className="text-xs opacity-60 mt-1">Dia sem atividades agendadas</span>
         ) : (
-           aula && <span className="text-xs opacity-70">({aula.horario})</span>
+           aula && (
+            <>
+                <span className="text-xs opacity-70">({aula.horario})</span>
+                {aula.observacao && (
+                    <span className="text-[10px] uppercase tracking-wider font-semibold opacity-50 mt-1 text-green-200">
+                        {aula.observacao}
+                    </span>
+                )}
+            </>
+           )
         )}
      </div>
   </div>
@@ -131,6 +140,64 @@ const DiaCard: React.FC<{ diaDeAula: DiaDeAula }> = ({ diaDeAula }) => {
   );
 };
 
+// --- Helper function to summarize groups for PDF title ---
+const getGroupRangeSummary = (schedule: Schedule): string => {
+    const allGroups = new Set<string>();
+    
+    schedule.forEach(day => {
+        day.aulas.forEach(aula => {
+            if (aula.isFreeSlot) return;
+            // Ignore Electives for the main group summary usually, or include them if desired.
+            // The user prompt asks to summarize groups like "Groups A to E".
+            // Usually "Eletiva" is a generic group name, so we might filter it out if it's exactly "Eletiva".
+            
+            aula.subSessions.forEach(sub => {
+                const cleanName = sub.grupo.replace(/^(GRUPO|Grupo)\s*-\s*|^(GRUPO|Grupo)\s+/i, '').trim();
+                if (cleanName && cleanName.toLowerCase() !== 'eletiva' && cleanName.toLowerCase() !== 'geral') {
+                    allGroups.add(cleanName);
+                }
+            });
+        });
+    });
+
+    const groupsArray = Array.from(allGroups);
+    
+    if (groupsArray.length === 0) return "";
+
+    // Sort logic similar to service
+    groupsArray.sort((a, b) => {
+        const isNumA = !isNaN(Number(a));
+        const isNumB = !isNaN(Number(b));
+        if (isNumA && isNumB) return Number(a) - Number(b);
+        if (!isNumA && !isNumB) return a.localeCompare(b);
+        return isNumA ? 1 : -1;
+    });
+
+    if (groupsArray.length === 1) {
+        return `Grupo ${groupsArray[0]}`;
+    }
+
+    // Check if sequential numeric
+    const isAllNumeric = groupsArray.every(g => !isNaN(Number(g)));
+    if (isAllNumeric) {
+        return `Grupos de ${groupsArray[0]} a ${groupsArray[groupsArray.length - 1]}`;
+    }
+
+    // Check if sequential single letters (A, B, C...)
+    const isAllSingleLetters = groupsArray.every(g => g.length === 1 && g.match(/[a-zA-Z]/));
+    if (isAllSingleLetters) {
+         return `Grupos de ${groupsArray[0]} a ${groupsArray[groupsArray.length - 1]}`;
+    }
+
+    // Fallback for mixed or non-sequential: just list them or say "Grupos Selecionados" if too many
+    if (groupsArray.length <= 5) {
+        return `Grupos: ${groupsArray.join(', ')}`;
+    }
+
+    return `Grupos de ${groupsArray[0]} a ${groupsArray[groupsArray.length - 1]}`;
+};
+
+
 interface ScheduleDisplayProps {
   schedule: Schedule | null;
   periodo: string;
@@ -193,10 +260,15 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     header.appendChild(rightContainer);
     pdfContainer.appendChild(header);
     
-    // 3. Adiciona o título contextual com o período (Centralizado abaixo do header)
+    // 3. Adiciona o título contextual com o período E O RESUMO DOS GRUPOS
+    const groupSummary = schedule ? getGroupRangeSummary(schedule) : "";
+    const fullTitle = groupSummary 
+        ? `Grade Curricular - ${periodo} - ${groupSummary}`
+        : `Grade Curricular - ${periodo}`;
+
     const scheduleTitle = document.createElement('h2');
     scheduleTitle.className = 'pdf-title';
-    scheduleTitle.textContent = `Grade Curricular - ${periodo}`;
+    scheduleTitle.textContent = fullTitle;
     pdfContainer.appendChild(scheduleTitle);
 
 
