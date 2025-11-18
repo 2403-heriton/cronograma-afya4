@@ -51,6 +51,7 @@
         background-color: #ffffff !important;
         font-family: sans-serif;
         color: #000000 !important;
+        font-size: 11px !important; /* Base font reduced for A4 */
         -webkit-print-color-adjust: exact !important;
         print-color-adjust: exact !important;
       }
@@ -85,7 +86,7 @@
       .pdf-export-grid {
         display: grid !important;
         grid-template-columns: repeat(5, 1fr) !important;
-        gap: 1.5rem !important;
+        gap: 0.8rem !important; /* Reduced gap for A4 */
         width: 100%;
       }
       
@@ -99,7 +100,7 @@
       .pdf-export-container .dia-card {
         background-color: #ffffff !important;
         border: 1px solid #9ca3af !important; /* gray-400 - Solid border */
-        border-radius: 8px !important;
+        border-radius: 6px !important;
         box-shadow: none !important;
         overflow: hidden;
       }
@@ -109,14 +110,14 @@
         color: #ffffff !important; /* Force white text on pink header */
         font-weight: bold !important;
         border-bottom: 1px solid #9ca3af !important;
-        padding: 10px !important;
-        font-size: 1.1rem !important;
+        padding: 8px !important; /* Reduced padding */
+        font-size: 1.05rem !important;
       }
 
       .pdf-export-container .dia-card > div {
          background-color: #ffffff !important; /* Body of day card */
-         padding: 10px !important;
-         gap: 10px !important;
+         padding: 8px !important; /* Reduced padding */
+         gap: 8px !important;
       }
 
       /* Class (Aula) Card Styling */
@@ -126,7 +127,7 @@
         border-left-width: 6px !important; /* Thicker color indicator */
         border-radius: 6px !important;
         box-shadow: none !important;
-        margin-bottom: 8px !important;
+        margin-bottom: 6px !important;
         height: auto !important; /* Force auto height to prevent stretching */
       }
 
@@ -134,20 +135,21 @@
       .pdf-export-container .aula-card .discipline-header {
         background-color: var(--card-color) !important;
         border-bottom: 1px solid rgba(0,0,0,0.1) !important;
+        padding: 4px 8px !important; /* Compact */
       }
 
       .pdf-export-container .aula-card h4 {
         color: #000000 !important;
         font-weight: 700 !important;
-        font-size: 0.95rem !important;
+        font-size: 0.9rem !important;
       }
 
       /* Inner Cards (Sub-sessions/Groups) in PDF */
       .pdf-export-container .aula-inner-card {
         background-color: #ffffff !important;
         border: 1px solid #9ca3af !important; /* Solid grey border */
-        margin-bottom: 8px !important;
-        padding: 8px !important;
+        margin-bottom: 6px !important;
+        padding: 6px !important;
         box-shadow: none !important;
         border-radius: 4px !important;
       }
@@ -240,7 +242,7 @@
          right: 50px;
          transform: translateY(-50%);
          opacity: 0.1;
-         width: 500px !important; /* Fixed width to prevent stretching */
+         width: 300px !important; /* Adjusted for A4 */
          height: auto !important; /* Auto height to maintain aspect ratio */
          pointer-events: none;
          z-index: 0;

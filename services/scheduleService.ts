@@ -233,6 +233,39 @@ const isNumericGroup = (groupName: string): boolean => {
 
 const getCleanGroupName = (g: string) => g.replace(/^(GRUPO|Grupo)\s*-\s*|^(GRUPO|Grupo)\s+|^(TURMA|Turma)\s+/i, '').trim();
 
+const getGroupLabelForEntries = (entries: AulaEntry[]): string => {
+    const groups = [...new Set(entries.map(e => e.grupo))];
+    const cleanGroups = groups.map(getCleanGroupName).filter(Boolean);
+    
+    if (cleanGroups.length === 0) return "";
+    
+    cleanGroups.sort((a, b) => {
+        const isNumA = !isNaN(Number(a));
+        const isNumB = !isNaN(Number(b));
+        if (isNumA && isNumB) return Number(a) - Number(b);
+        if (!isNumA && !isNumB) return a.localeCompare(b);
+        return isNumA ? 1 : -1;
+    });
+
+    if (cleanGroups.length === 1) return `Grupo ${cleanGroups[0]}`;
+    
+    const isAllNumeric = cleanGroups.every(g => !isNaN(Number(g)));
+    if (isAllNumeric) {
+         return `Grupos ${cleanGroups[0]} à ${cleanGroups[cleanGroups.length - 1]}`;
+    }
+    
+    const isAllSingleLetters = cleanGroups.every(g => g.length === 1 && g.match(/[a-zA-Z]/));
+    if (isAllSingleLetters) {
+         return `Grupos ${cleanGroups[0]} à ${cleanGroups[cleanGroups.length - 1]}`;
+    }
+    
+    if (cleanGroups.length <= 5) {
+        return `Grupos ${cleanGroups.join(', ')}`;
+    }
+    
+    return `Grupos ${cleanGroups[0]} à ${cleanGroups[cleanGroups.length - 1]}`;
+}
+
 const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
     const weekOrder = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
     
@@ -378,6 +411,10 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
         const hasAlpha = alphaEntries.length > 0;
         const hasBoth = hasNumeric && hasAlpha;
 
+        // Labels for Free Slots based on the groups present in the day
+        const numericLabel = getGroupLabelForEntries(numericEntries);
+        const alphaLabel = getGroupLabelForEntries(alphaEntries);
+
         const numericIntervals = numericEntries.map(e => ({ start: parseMinutes(e.horario_inicio), end: parseMinutes(e.horario_fim) }));
         const alphaIntervals = alphaEntries.map(e => ({ start: parseMinutes(e.horario_inicio), end: parseMinutes(e.horario_fim) }));
 
@@ -399,10 +436,12 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
             const processedNumericIndices = new Set<number>();
             const processedAlphaIndices = new Set<number>();
 
+            const combinedLabel = [numericLabel, alphaLabel].filter(Boolean).join(' e ');
+
             numericGaps.forEach((nGap, nIdx) => {
                 alphaGaps.forEach((aGap, aIdx) => {
                     if (nGap.start === aGap.start && nGap.end === aGap.end) {
-                        freeSlots.push(createFreeSlot(nGap.start, nGap.end, ''));
+                        freeSlots.push(createFreeSlot(nGap.start, nGap.end, combinedLabel));
                         processedNumericIndices.add(nIdx);
                         processedAlphaIndices.add(aIdx);
                     }
@@ -411,20 +450,23 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
 
             numericGaps.forEach((gap, idx) => {
                 if (!processedNumericIndices.has(idx)) {
-                    freeSlots.push(createFreeSlot(gap.start, gap.end, 'Grupos Numéricos'));
+                    freeSlots.push(createFreeSlot(gap.start, gap.end, numericLabel));
                 }
             });
 
             alphaGaps.forEach((gap, idx) => {
                 if (!processedAlphaIndices.has(idx)) {
-                    freeSlots.push(createFreeSlot(gap.start, gap.end, 'Grupos Alfabéticos'));
+                    freeSlots.push(createFreeSlot(gap.start, gap.end, alphaLabel));
                 }
             });
 
         } else {
-            const activeGaps = hasNumeric ? numericGaps : (hasAlpha ? alphaGaps : []);
+            const isNumeric = hasNumeric;
+            const activeGaps = isNumeric ? numericGaps : (hasAlpha ? alphaGaps : []);
+            const label = isNumeric ? numericLabel : (hasAlpha ? alphaLabel : 'Geral');
+            
             activeGaps.forEach(gap => {
-                freeSlots.push(createFreeSlot(gap.start, gap.end, ''));
+                freeSlots.push(createFreeSlot(gap.start, gap.end, label));
             });
         }
         

@@ -223,7 +223,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     const headerWrapper = document.createElement('div');
     headerWrapper.style.backgroundColor = '#ffffff';
     headerWrapper.style.padding = '20px 40px 0 40px';
-    headerWrapper.style.width = '1600px';
+    headerWrapper.style.width = '1280px'; // Reduced from 1600px for A4 fit
 
     const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
 
@@ -245,8 +245,8 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     // 1b. Create Title for Grid
     const groupSummary = schedule ? getGroupRangeSummary(schedule) : "";
     const fullTitle = groupSummary 
-        ? `Grade Curricular - ${periodo} - ${groupSummary}`
-        : `Grade Curricular - ${periodo}`;
+        ? `Semana Padrão 2026.1 - ${periodo} - ${groupSummary}`
+        : `Semana Padrão 2026.1 - ${periodo}`;
     
     const gridTitleContainer = document.createElement('div');
     gridTitleContainer.innerHTML = `<h2 class="pdf-title" style="text-align: center; font-size: 24px; font-weight: bold; color: #374151; margin: 20px 0;">${fullTitle}</h2>`;
@@ -262,7 +262,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     bodyWrapper.id = 'pdf-body-wrapper'; // ID for DOM query during safe slicing
     bodyWrapper.style.backgroundColor = '#ffffff';
     bodyWrapper.style.padding = '10px 40px 40px 40px';
-    bodyWrapper.style.width = '1600px';
+    bodyWrapper.style.width = '1280px'; // Reduced from 1600px for A4 fit
     bodyWrapper.appendChild(gridTitleContainer);
     bodyWrapper.appendChild(contentClone);
     
@@ -296,11 +296,11 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         const bodyImgData = bodyCanvas.toDataURL('image/png');
         const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
         
-        // PDF Setup (A3 Landscape)
+        // PDF Setup (A4 Landscape)
         const pdf = new jsPDF({
           orientation: 'landscape',
           unit: 'mm',
-          format: 'a3',
+          format: 'a4',
         });
 
         const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -358,25 +358,6 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
             cutHeight = safeCutY_mm - currentSourcePdfY;
         }
 
-        // Draw Body Slice for Page 1
-        // sourceY, sourceH, destX, destY, destW, destH
-        // addImage(data, fmt, x, y, w, h, alias, compression, rotation)
-        // But standard addImage doesn't crop. We must use a method to simulating cropping by shifting y.
-        // Actually, jsPDF simply pastes the whole image. We simulate "crop" by pasting the image shifted UP
-        // and masking the rest with a clipping rect (or simpler: let it overflow off-page if we weren't caring, but we care).
-        // Better approach for html2canvas+jspdf multipage without splitting image manually:
-        // Since we can't easily "crop" inside addImage without complexity, we stick to the "Shift Y" method.
-        // The "Shift Y" method works by placing the top of the *source image* at a calculated negative Y.
-        // e.g. to show the slice starting at 500px, we place the image at y = -500px (relative to the content area).
-
-        // Actually, simpler logic for standard usage:
-        // We know exactly how tall the content we WANT to show is (`cutHeight`).
-        // We place the image at (0, page1MarginTop - currentSourcePdfY).
-        // And we rely on the page break to hide the rest? No, content would overlap footer/margins.
-        // Ideally we use a clipping rect or multiple canvases. 
-        // Given the constraint, the "Shift Y" strategy is the most robust if we assume standard white bg covers previous pages.
-        // BUT, to be clean:
-        
         // PAGE 1 DRAW
         pdf.addImage(bodyImgData, 'PNG', 0, page1MarginTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
         
