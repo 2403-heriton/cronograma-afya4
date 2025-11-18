@@ -1,0 +1,316 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Afya - Faculdade de Ciências Médicas - Paraíba - Agente de Cronograma</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'afya-blue': '#0057B8',
+              'afya-pink': '#CE0058',
+              'soft-pink': '#FBE9F2',
+              'light-mint': '#E6F9F2',
+            },
+            textShadow: {
+              md: '0 2px 4px rgba(0,0,0,0.1)',
+            },
+          }
+        }
+      }
+    </script>
+    <style>
+      /* Animation for schedule cards */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+      .animate-fade-in {
+        animation: fadeIn 0.5s ease-out forwards;
+        opacity: 0; /* Start hidden */
+      }
+
+      /* =========================================
+         PDF EXPORT STYLES - HIGH CONTRAST / PRINT
+         ========================================= */
+      .pdf-export-container {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        background-color: #ffffff !important;
+        padding: 40px !important;
+        width: 1600px !important; /* A3 Landscape Width approx */
+        font-family: sans-serif;
+        color: #000000 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      /* Reset Text Colors for Print */
+      .pdf-export-container * {
+        color: #111827 !important; /* gray-900 */
+        text-shadow: none !important;
+      }
+
+      /* Header and Logos */
+      .pdf-watermark {
+        position: absolute;
+        right: 40px;
+        top: 50%;
+        transform: translateY(-50%);
+        height: 100%;
+        opacity: 0.03;
+        z-index: 0;
+        filter: grayscale(100%);
+      }
+
+      .pdf-header {
+        position: relative;
+        z-index: 1;
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 3px solid #CE0058 !important; /* Brand Pink Line */
+      }
+
+      .pdf-header-left {
+        display: flex !important;
+        align-items: center !important;
+      }
+
+      .pdf-header .pdf-logo {
+        height: 50px !important;
+        filter: none !important; 
+      }
+      
+      .pdf-header-right {
+        text-align: right !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-end !important;
+      }
+
+      .pdf-coord-title {
+        color: #CE0058 !important;
+        font-weight: 800 !important;
+        font-size: 0.9rem !important;
+        text-transform: uppercase !important;
+        margin-bottom: 4px !important;
+      }
+
+      .pdf-coord-names {
+        color: #4b5563 !important; /* gray-600 */
+        font-size: 0.75rem !important;
+        font-weight: 600 !important;
+      }
+
+      .pdf-title {
+        text-align: center;
+        margin-bottom: 1.5rem;
+        font-size: 1.5rem !important;
+        font-weight: 600 !important;
+        color: #374151 !important; /* gray-700 */
+      }
+
+      /* Layout Grid */
+      .pdf-export-grid {
+        display: grid !important;
+        grid-template-columns: repeat(5, 1fr) !important;
+        gap: 1.5rem !important;
+        width: 100%;
+      }
+      
+      .pdf-export-container .animate-fade-in {
+        animation: none !important;
+        opacity: 1 !important;
+        break-inside: avoid;
+      }
+
+      /* Day Card Styling */
+      .pdf-export-container .dia-card {
+        background-color: #ffffff !important;
+        border: 1px solid #9ca3af !important; /* gray-400 - Solid border */
+        border-radius: 8px !important;
+        box-shadow: none !important;
+        overflow: hidden;
+      }
+      
+      .pdf-export-container .dia-card h3 {
+        background-color: #CE0058 !important;
+        color: #ffffff !important; /* Force white text on pink header */
+        font-weight: bold !important;
+        border-bottom: 1px solid #9ca3af !important;
+        padding: 10px !important;
+        font-size: 1.1rem !important;
+      }
+
+      .pdf-export-container .dia-card > div {
+         background-color: #ffffff !important; /* Body of day card */
+         padding: 10px !important;
+         gap: 10px !important;
+      }
+
+      /* Class (Aula) Card Styling */
+      .pdf-export-container .aula-card {
+        background-color: #ffffff !important;
+        border: 1px solid #d1d5db !important; /* gray-300 */
+        border-left-width: 6px !important; /* Thicker color indicator */
+        border-radius: 6px !important;
+        box-shadow: none !important;
+        margin-bottom: 8px !important;
+        height: auto !important; /* Force auto height to prevent stretching */
+      }
+
+      /* Headers inside Aula Card - Apply specific discipline color */
+      .pdf-export-container .aula-card .discipline-header {
+        background-color: var(--card-color) !important;
+        border-bottom: 1px solid rgba(0,0,0,0.1) !important;
+      }
+
+      .pdf-export-container .aula-card h4 {
+        color: #000000 !important;
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
+      }
+
+      /* Inner Cards (Sub-sessions/Groups) in PDF */
+      .pdf-export-container .aula-inner-card {
+        background-color: #ffffff !important;
+        border: 1px solid #9ca3af !important; /* Solid grey border */
+        margin-bottom: 8px !important;
+        padding: 8px !important;
+        box-shadow: none !important;
+        border-radius: 4px !important;
+      }
+      
+      /* Force text wrapping in PDF to prevent clipping */
+      .pdf-export-container .aula-inner-card span,
+      .pdf-export-container .aula-inner-card div {
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        height: auto !important;
+      }
+      
+      .pdf-export-container .aula-inner-card .border-slate-700 {
+         border-color: #d1d5db !important;
+      }
+
+      /* Group Badges & Pills */
+      .pdf-export-container .bg-blue-900\/20 {
+        background-color: #eff6ff !important; /* blue-50 */
+        border: 1px solid #bfdbfe !important; /* blue-200 */
+      }
+      .pdf-export-container .text-afya-blue {
+        color: #0057B8 !important; /* Brand Blue */
+      }
+      
+      .pdf-export-container .bg-purple-900\/50 {
+        background-color: #f3e8ff !important; /* purple-100 */
+        color: #6b21a8 !important; /* purple-800 */
+        border: 1px solid #d8b4fe !important;
+      }
+
+      /* Text Details */
+      .pdf-export-container .text-gray-400,
+      .pdf-export-container .text-gray-300,
+      .pdf-export-container .text-gray-500 {
+        color: #4b5563 !important; /* gray-600 - Darker for readability */
+      }
+      
+      /* Icons */
+      .pdf-export-container svg {
+        color: #374151 !important; /* Make icons visible (dark gray) */
+      }
+
+      /* Hover effects removal */
+      .pdf-export-container .hover\:bg-slate-700\/30 {
+        background-color: transparent !important;
+      }
+
+      /* Observations */
+      .pdf-export-container .bg-amber-900\/20 {
+        background-color: #fffbeb !important; /* amber-50 */
+        border: 1px solid #fcd34d !important; /* amber-300 */
+        color: #92400e !important; /* amber-800 */
+      }
+      .pdf-export-container .text-amber-300,
+      .pdf-export-container .text-amber-400 {
+        color: #b45309 !important; /* amber-700 */
+      }
+
+      /* Free Slot / Interval Card - GREEN STYLE FOR PDF */
+      .pdf-export-container .free-slot-card {
+        background-color: #f0fdf4 !important; /* green-50 */
+        border: 1px solid #86efac !important; /* green-300 - Solid border as requested implicitly by "green cards" */
+        color: #166534 !important; /* green-800 */
+      }
+      .pdf-export-container .free-slot-card .text-green-200\/80,
+      .pdf-export-container .free-slot-card .text-green-800 {
+         color: #15803d !important; /* green-700 */
+      }
+      .pdf-export-container .free-slot-card svg {
+         opacity: 1 !important;
+         color: #15803d !important;
+      }
+      .pdf-export-container .free-slot-card span {
+         color: #14532d !important; /* green-900 */
+         font-weight: 600 !important;
+      }
+
+      /* =========================================
+         EVENTS PDF STYLES
+         ========================================= */
+      .pdf-export-container .event-month-group-pdf h3 {
+         color: #CE0058 !important;
+         border-left-color: #CE0058 !important;
+         background: transparent !important;
+         padding-left: 10px !important;
+         font-size: 1.4rem !important;
+         margin-top: 20px !important;
+      }
+      .pdf-export-event-grid {
+        display: grid !important;
+        grid-template-columns: repeat(3, 1fr) !important;
+        gap: 1.5rem !important;
+      }
+      .pdf-export-container .event-card-pdf {
+        background-color: #ffffff !important;
+        border: 1px solid #d1d5db !important;
+        border-left: 6px solid var(--event-color) !important; /* Use injected variable */
+        box-shadow: none !important;
+      }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.29.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-slate-900 text-gray-300 font-sans">
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>
