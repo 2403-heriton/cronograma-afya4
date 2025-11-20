@@ -68,7 +68,7 @@ const normalizeDayOfWeek = (day: string): string => {
     return day;
 };
 
-const normalizePeriodo = (periodo: string): string => {
+export const normalizePeriodo = (periodo: string): string => {
     if (!periodo) return '';
     const match = String(periodo).match(/\d+/);
     if (match) {

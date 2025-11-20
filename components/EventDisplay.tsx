@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import type { Event } from '../types';
 import { stringToColor } from '../services/colorService';
-import { parseBrDate } from '../services/scheduleService';
+import { parseBrDate, normalizePeriodo } from '../services/scheduleService';
 import NotFoundIcon from './icons/NotFoundIcon';
 import CalendarIcon from './icons/CalendarIcon';
 import ClockIcon from './icons/ClockIcon';
@@ -47,14 +47,22 @@ const EventCard: React.FC<{ event: Event }> = ({ event }) => {
       dateDisplay = `de ${formattedStartDate} à ${formattedEndDate}`;
   }
 
+  const isGeneralEvent = normalizePeriodo(event.periodo) === 'geral';
+
   return (
     <div 
-      className="bg-slate-800 p-4 rounded-lg border-l-4 border border-slate-700 shadow-md flex flex-col h-full event-card-pdf"
+      className="bg-slate-800 p-4 rounded-lg border-l-4 border border-slate-700 shadow-md flex flex-col h-full event-card-pdf relative overflow-hidden"
       style={{ 
         borderLeftColor: color,
         '--event-color': color
       } as React.CSSProperties}
     >
+      <div className="flex justify-between items-start mb-2">
+          <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full ${isGeneralEvent ? 'bg-gray-700 text-gray-300' : 'bg-blue-900/50 text-blue-200'}`}>
+              {isGeneralEvent ? 'Geral' : event.periodo}
+          </span>
+      </div>
+
       <p className="font-bold text-gray-100 mb-2">{event.disciplina}</p>
       <div className="space-y-1">
         {dateDisplay && <EventInfo icon={<CalendarIcon />} label="Período" value={dateDisplay} />}
@@ -74,6 +82,7 @@ interface EventDisplayProps {
 
 const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
   const [selectedType, setSelectedType] = useState<string>('Todos');
+  const [selectedScope, setSelectedScope] = useState<'all' | 'specific' | 'general'>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
@@ -88,12 +97,19 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
     
     let result = events;
 
-    // 1. Filtro por Tipo
+    // 1. Filtro por Escopo (Período vs Geral)
+    if (selectedScope === 'specific') {
+        result = result.filter(event => normalizePeriodo(event.periodo) !== 'geral');
+    } else if (selectedScope === 'general') {
+        result = result.filter(event => normalizePeriodo(event.periodo) === 'geral');
+    }
+
+    // 2. Filtro por Tipo
     if (selectedType !== 'Todos') {
       result = result.filter(event => event.tipo === selectedType);
     }
 
-    // 2. Filtro por Texto (Busca)
+    // 3. Filtro por Texto (Busca)
     if (searchTerm.trim() !== '') {
         const term = searchTerm.toLowerCase();
         result = result.filter(event => 
@@ -106,7 +122,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
     }
 
     return result;
-  }, [events, selectedType, searchTerm]);
+  }, [events, selectedType, selectedScope, searchTerm]);
   
   const groupedByMonth = useMemo(() => {
     if (!filteredEvents) return {};
@@ -138,8 +154,9 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
   
     // --- 1. Prepare Temporary Container ---
     const tempContainer = document.createElement('div');
-    tempContainer.className = 'pdf-export-container'; // Will apply 1280px width from index.html
-    const CAPTURE_WIDTH = 1280;
+    tempContainer.className = 'pdf-export-container portrait'; // Class 'portrait' triggers 900px width in CSS
+    tempContainer.classList.add('capturing');
+    const CAPTURE_WIDTH = 900; // Reduced width for Portrait A4 readability
     
     // 1a. Create Header Element (Identical to Schedule Display)
     const headerWrapper = document.createElement('div');
@@ -152,13 +169,13 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
     headerWrapper.innerHTML = `
         <div class="pdf-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #CE0058; padding-bottom: 15px; margin-bottom: 10px;">
             <div style="flex-shrink: 0;">
-                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain;" alt="Afya Logo" crossorigin="anonymous" />
+                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain; display: block;" alt="Afya Logo" crossorigin="anonymous" />
             </div>
             <div style="text-align: right; font-family: sans-serif;">
-                <h2 style="color: #CE0058; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
-                <div style="color: #4b5563; font-size: 11px; line-height: 1.4;">
-                    <span style="font-weight: 600; color: #1f2937;">Coordenador do Curso:</span> Prof. Kristhea Karyne <span style="color:#CE0058; margin:0 6px;">|</span> 
-                    <span style="font-weight: 600; color: #1f2937;">Coordenadora Adjunta:</span> Prof. Roberya Viana
+                <h2 style="color: #0057B8; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
+                <div style="color: #CE0058; font-size: 11px; line-height: 1.4; font-weight: 600;">
+                    Coordenador do Curso: Prof. Kristhea Karyne <span style="margin:0 6px;">|</span> 
+                    Coordenadora Adjunta: Prof. Roberya Viana
                 </div>
             </div>
         </div>
@@ -192,7 +209,9 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
     tempContainer.appendChild(bodyWrapper);
     document.body.appendChild(tempContainer);
 
-    requestAnimationFrame(async () => {
+    await document.fonts.ready;
+    
+    setTimeout(async () => {
       try {
         const { jsPDF } = window.jspdf;
         
@@ -216,8 +235,9 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         const bodyImgData = bodyCanvas.toDataURL('image/png');
         const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
 
+        // A4 Portrait
         const pdf = new jsPDF({
-          orientation: 'landscape',
+          orientation: 'portrait',
           unit: 'mm',
           format: 'a4',
         });
@@ -230,14 +250,17 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
 
         // Scan DOM for Safe Slicing (Cards AND Month Headers)
-        // We don't want to cut an event card or a Month Title in half.
-        const elementsToAvoidCutting = Array.from(bodyWrapper.querySelectorAll('.event-card-pdf, .event-month-group-pdf h3'));
-        const elementPositions = elementsToAvoidCutting.map(el => {
+        const elementsToScan = Array.from(bodyWrapper.querySelectorAll('.event-card-pdf, .event-month-group-pdf h3'));
+        
+        const elementPositions = elementsToScan.map(el => {
             const rect = el.getBoundingClientRect();
             const wrapperRect = bodyWrapper.getBoundingClientRect();
+            const isCard = el.classList.contains('event-card-pdf');
             return {
                 top: rect.top - wrapperRect.top,
                 bottom: rect.bottom - wrapperRect.top,
+                left: rect.left - wrapperRect.left,
+                isCard: isCard
             };
         });
 
@@ -253,14 +276,46 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         const page1AvailableHeightPx = page1AvailableHeight / ratio;
         let proposedCutPx = currentSourcePx + page1AvailableHeightPx;
         
-        // Collision Detection P1
+        // --- LOGIC: MAX 4 CARDS PER COLUMN PER PAGE (Portrait) ---
+        const visibleElementsP1 = elementPositions.filter(p => p.top >= currentSourcePx - 5);
+        
+        // Group only cards by column
+        const cardsP1 = visibleElementsP1.filter(p => p.isCard);
+        const columnsP1: Record<number, typeof elementPositions> = {};
+        
+        cardsP1.forEach(p => {
+             // Approximate column grouping (2 columns in 900px ~ 450px width)
+             const colKey = Math.round(p.left / 400) * 400; 
+             if (!columnsP1[colKey]) columnsP1[colKey] = [];
+             columnsP1[colKey].push(p);
+        });
+        
+        let countLimitPxP1 = Infinity;
+        
+        Object.values(columnsP1).forEach(colCards => {
+            colCards.sort((a, b) => a.top - b.top);
+            // Max 4 Cards vertically for Portrait
+            if (colCards.length > 4) {
+                const card4 = colCards[3]; // index 3 is 4th card
+                const card5 = colCards[4]; // index 4 is 5th card
+                const midpoint = (card4.bottom + card5.top) / 2;
+                
+                if (midpoint > currentSourcePx && midpoint < countLimitPxP1) {
+                    countLimitPxP1 = midpoint;
+                }
+            }
+        });
+        
+        if (countLimitPxP1 < proposedCutPx) {
+            proposedCutPx = countLimitPxP1;
+        }
+
+        // --- COLLISION DETECTION P1 ---
         const collisionP1 = elementPositions.find(pos => 
             pos.top < proposedCutPx && pos.bottom > proposedCutPx
         );
         
         if (collisionP1) {
-             // Move cut up to the top of the element, ensuring we don't cut it
-             // Add small buffer (-15px)
              proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 15);
         }
         
@@ -285,7 +340,37 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              const pageAvailableHeightPx = pageAvailableHeight / ratio;
              let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
              
-             // Collision Detection Sub
+             // --- LOGIC: MAX 4 CARDS PER COLUMN PER PAGE (SUBSEQUENT) ---
+             const visibleElementsSub = elementPositions.filter(p => p.top >= currentSubSourcePx - 5);
+             const cardsSub = visibleElementsSub.filter(p => p.isCard);
+             const columnsSub: Record<number, typeof elementPositions> = {};
+             
+             cardsSub.forEach(p => {
+                 const colKey = Math.round(p.left / 400) * 400;
+                 if (!columnsSub[colKey]) columnsSub[colKey] = [];
+                 columnsSub[colKey].push(p);
+             });
+             
+             let countLimitPxSub = Infinity;
+             
+             Object.values(columnsSub).forEach(colCards => {
+                 colCards.sort((a, b) => a.top - b.top);
+                 if (colCards.length > 4) {
+                     const card4 = colCards[3];
+                     const card5 = colCards[4];
+                     const midpoint = (card4.bottom + card5.top) / 2;
+                     
+                     if (midpoint > currentSubSourcePx && midpoint < countLimitPxSub) {
+                         countLimitPxSub = midpoint;
+                     }
+                 }
+             });
+             
+             if (countLimitPxSub < nextProposedCutPx) {
+                 nextProposedCutPx = countLimitPxSub;
+             }
+
+             // --- COLLISION DETECTION SUB ---
              const nextCollision = elementPositions.find(pos => 
                 pos.top < nextProposedCutPx && pos.bottom > nextProposedCutPx
              );
@@ -322,7 +407,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         document.body.removeChild(tempContainer);
         setIsGeneratingPdf(false);
       }
-    });
+    }, 500); // 500ms Delay
   };
 
   if (!events || events.length === 0) {
@@ -340,26 +425,40 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
   return (
     <div>
       <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 mb-8">
-          <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
+          <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
             
-            {/* Filtros */}
-            <div className="w-full lg:flex-1 flex flex-col sm:flex-row gap-4">
+            {/* Filtros Container */}
+            <div className="w-full xl:flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {/* Input de Busca */}
-                <div className="relative flex-grow">
+                <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <SearchIcon className="h-5 w-5 text-gray-400" />
                     </div>
                     <input
                         type="text"
                         className="block w-full pl-10 p-2.5 bg-slate-700 border border-slate-600 rounded-lg text-gray-200 placeholder-gray-400 focus:ring-2 focus:ring-afya-pink focus:border-afya-pink"
-                        placeholder="Buscar eventos (disciplina, local, grupo...)"
+                        placeholder="Buscar..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
 
-                {/* Dropdown de Tipo */}
-                <div className="sm:w-64">
+                {/* Filtro de Escopo (Período) */}
+                 <div>
+                    <select
+                        id="event-scope-filter"
+                        value={selectedScope}
+                        onChange={(e) => setSelectedScope(e.target.value as any)}
+                        className="w-full p-2.5 bg-slate-700 text-gray-200 border border-slate-600 rounded-lg shadow-sm focus:ring-2 focus:ring-afya-pink focus:border-afya-pink transition duration-150 ease-in-out appearance-none"
+                    >
+                        <option value="all">Mostrar Todos</option>
+                        <option value="specific">Apenas {periodo}</option>
+                        <option value="general">Apenas Eventos Gerais</option>
+                    </select>
+                </div>
+
+                {/* Filtro de Tipo */}
+                <div>
                     <select
                         id="event-type-filter"
                         value={selectedType}
@@ -374,7 +473,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
             </div>
 
             {/* Botão PDF */}
-            <div className="w-full lg:w-auto flex-shrink-0">
+            <div className="w-full xl:w-auto flex-shrink-0 mt-2 xl:mt-0">
                <button
                 onClick={handleViewPdf}
                 disabled={isGeneratingPdf}

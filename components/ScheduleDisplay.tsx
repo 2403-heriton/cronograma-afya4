@@ -69,7 +69,7 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
     >
       {/* Header da Disciplina */}
       <div className="p-3 bg-slate-800/50 border-b border-slate-700 discipline-header">
-        <div className="flex justify-between items-start gap-2">
+        <div className="flex justify-between items-start gap-2 w-full">
            <h4 className="font-bold text-gray-100 text-base leading-tight">
             {aula.disciplina}
           </h4>
@@ -153,6 +153,7 @@ const DiaCard: React.FC<{ diaDeAula: DiaDeAula }> = ({ diaDeAula }) => {
 const getGroupRangeSummary = (schedule: Schedule): string => {
     const allGroups = new Set<string>();
     
+    // 1. Extrair todos os grupos únicos do cronograma visível
     schedule.forEach(day => {
         day.aulas.forEach(aula => {
             if (aula.isFreeSlot) return;
@@ -171,33 +172,33 @@ const getGroupRangeSummary = (schedule: Schedule): string => {
     const groupsArray = Array.from(allGroups);
     if (groupsArray.length === 0) return "";
 
-    groupsArray.sort((a, b) => {
-        const isNumA = !isNaN(Number(a));
-        const isNumB = !isNaN(Number(b));
-        if (isNumA && isNumB) return Number(a) - Number(b);
-        if (!isNumA && !isNumB) return a.localeCompare(b);
-        return isNumA ? 1 : -1;
-    });
+    // 2. Separar em Numéricos e Alfabéticos
+    const numericGroups = groupsArray.filter(g => !isNaN(Number(g)));
+    const alphaGroups = groupsArray.filter(g => isNaN(Number(g)));
 
-    if (groupsArray.length === 1) {
-        return `Grupo ${groupsArray[0]}`;
+    // 3. Ordenar cada lista
+    numericGroups.sort((a, b) => Number(a) - Number(b));
+    alphaGroups.sort((a, b) => a.localeCompare(b));
+
+    // 4. Função auxiliar para formatar o intervalo
+    const formatRange = (list: string[]) => {
+        if (list.length === 0) return "";
+        if (list.length === 1) return `Grupo ${list[0]}`;
+        if (list.length <= 3) return `Grupos ${list.join(', ')}`; // Lista curta
+        return `Grupos de ${list[0]} a ${list[list.length - 1]}`; // Intervalo
+    };
+
+    const numericSummary = formatRange(numericGroups);
+    const alphaSummary = formatRange(alphaGroups);
+
+    // 5. Combinar os resultados
+    if (numericSummary && alphaSummary) {
+        // Ex: "Grupos de A a E e Grupos de 1 a 20"
+        // A ordem pode ser ajustada. Aqui coloco Alfabético primeiro, depois Numérico.
+        return `${alphaSummary} e ${numericSummary}`;
     }
 
-    const isAllNumeric = groupsArray.every(g => !isNaN(Number(g)));
-    if (isAllNumeric) {
-        return `Grupos de ${groupsArray[0]} a ${groupsArray[groupsArray.length - 1]}`;
-    }
-
-    const isAllSingleLetters = groupsArray.every(g => g.length === 1 && g.match(/[a-zA-Z]/));
-    if (isAllSingleLetters) {
-         return `Grupos de ${groupsArray[0]} a ${groupsArray[groupsArray.length - 1]}`;
-    }
-
-    if (groupsArray.length <= 5) {
-        return `Grupos: ${groupsArray.join(', ')}`;
-    }
-
-    return `Grupos de ${groupsArray[0]} a ${groupsArray[groupsArray.length - 1]}`;
+    return numericSummary || alphaSummary;
 };
 
 
@@ -218,9 +219,11 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     // --- 1. Prepare Temporary Containers ---
     const tempContainer = document.createElement('div');
     tempContainer.className = 'pdf-export-container';
+    // Force the browser to render it now by adding a 'capturing' class
+    // This class in CSS sets visibility: visible, even if z-index is negative
+    tempContainer.classList.add('capturing');
     
     // Configuração de largura A4 Paisagem otimizada
-    // 1280px garante boa resolução para A4 sem ficar minúsculo
     const CAPTURE_WIDTH = 1280;
 
     // 1a. Create Header Element
@@ -234,13 +237,13 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     headerWrapper.innerHTML = `
         <div class="pdf-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #CE0058; padding-bottom: 15px; margin-bottom: 10px;">
             <div style="flex-shrink: 0;">
-                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain;" alt="Afya Logo" crossorigin="anonymous" />
+                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain; display: block;" alt="Afya Logo" crossorigin="anonymous" />
             </div>
             <div style="text-align: right; font-family: sans-serif;">
-                <h2 style="color: #CE0058; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
-                <div style="color: #4b5563; font-size: 11px; line-height: 1.4;">
-                    <span style="font-weight: 600; color: #1f2937;">Coordenador do Curso:</span> Prof. Kristhea Karyne <span style="color:#CE0058; margin:0 6px;">|</span> 
-                    <span style="font-weight: 600; color: #1f2937;">Coordenadora Adjunta:</span> Prof. Roberya Viana
+                <h2 style="color: #0057B8; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
+                <div style="color: #CE0058; font-size: 11px; line-height: 1.4; font-weight: 600;">
+                    Coordenador do Curso: Prof. Kristhea Karyne <span style="margin:0 6px;">|</span> 
+                    Coordenadora Adjunta: Prof. Roberya Viana
                 </div>
             </div>
         </div>
@@ -274,8 +277,11 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     tempContainer.appendChild(bodyWrapper);
     document.body.appendChild(tempContainer);
 
-    // --- 2. Generate PDF with Safe Slicing ---
-    requestAnimationFrame(async () => {
+    // Use setTimeout to allow the browser to perform the layout paint before capturing
+    // This is crucial for production builds where CSS loading might be slightly deferred
+    await document.fonts.ready; // Wait for fonts
+    
+    setTimeout(async () => {
       try {
         const { jsPDF } = window.jspdf;
         
@@ -474,7 +480,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         document.body.removeChild(tempContainer);
         setIsGeneratingPdf(false);
       }
-    });
+    }, 500); // 500ms delay ensures CSS is fully applied in production environment
   };
   
   const hasClasses = schedule && schedule.length > 0;
