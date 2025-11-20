@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import type { Schedule, DiaDeAula, Aula } from '../types';
 import ClockIcon from './icons/ClockIcon';
@@ -11,8 +10,8 @@ import SpinnerIcon from './icons/SpinnerIcon';
 import CoffeeIcon from './icons/CoffeeIcon';
 import { stringToColor } from '../services/colorService';
 import { afyaLogoDataUrl } from './icons/AfyaLogo';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+// REMOVED: html2canvas, jsPDF imports
+import { generatePdfViaBackend } from './pdfUtils';
 
 const ObservacaoDisplay: React.FC<{ text: string }> = ({ text }) => {
   if (!text) return null;
@@ -60,7 +59,7 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
   
   return (
     <div 
-      className="bg-slate-800 rounded-lg shadow-md border border-slate-700 border-l-4 overflow-hidden aula-card flex flex-col"
+      className="bg-slate-800 rounded-lg shadow-md border border-slate-700 border-l-4 overflow-hidden aula-card flex flex-col break-inside-avoid"
       style={{ 
         borderLeftColor: color,
         '--card-color': color
@@ -198,246 +197,58 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const handleViewPdf = async () => {
-    const scheduleContent = document.getElementById('schedule-pdf-content');
-    if (!scheduleContent) return;
-  
+    if (!schedule) return;
     setIsGeneratingPdf(true);
-  
-    const CAPTURE_WIDTH = 1280;
 
-    const tempContainer = document.createElement('div');
-    tempContainer.className = 'pdf-export-container';
-    tempContainer.classList.add('capturing'); 
-    
-    const headerWrapper = document.createElement('div');
-    headerWrapper.className = 'pdf-header-wrapper';
-    headerWrapper.style.width = `${CAPTURE_WIDTH}px`;
+    try {
+        const groupSummary = getGroupRangeSummary(schedule);
+        const fullTitle = groupSummary 
+            ? `Semana Padrão 2026.1 - ${periodo} - ${groupSummary}`
+            : `Semana Padrão 2026.1 - ${periodo}`;
+        
+        // Create the header/content structure directly in the DOM (hidden from user but captured by script)
+        // Or rely on the existing hidden container logic, but populated with state
+        
+        const tempContainer = document.createElement('div');
+        tempContainer.className = 'pdf-export-container'; 
+        tempContainer.id = 'pdf-export-temp';
+        
+        // Using inline SVG base64 for logo to ensure it renders in Puppeteer
+        const logoSrc = afyaLogoDataUrl; 
 
-    const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
-
-    headerWrapper.innerHTML = `
-        <div class="pdf-header">
-            <div>
-                 <img src="${logoSrc}" alt="Afya Logo" crossorigin="anonymous" />
-            </div>
-            <div>
-                <h2 style="color: #0057B8 !important; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
-                <div style="color: #CE0058 !important; font-size: 11px; font-weight: 600;">
-                    Coordenador do Curso: Prof. Kristhea Karyne <span style="margin:0 6px;">|</span> 
-                    Coordenadora Adjunta: Prof. Roberya Viana
+        tempContainer.innerHTML = `
+            <div class="pdf-header">
+                <div>
+                    <img src="${logoSrc}" alt="Afya Logo" style="height: 55px; width: auto; object-fit: contain;" />
+                </div>
+                <div style="text-align: right;">
+                    <h2 style="color: #0057B8 !important; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
+                    <div style="color: #CE0058 !important; font-size: 11px; font-weight: 600;">
+                        Coordenador do Curso: Prof. Kristhea Karyne <span style="margin:0 6px;">|</span> 
+                        Coordenadora Adjunta: Prof. Roberya Viana
+                    </div>
                 </div>
             </div>
-        </div>
-    `;
-    
-    const groupSummary = schedule ? getGroupRangeSummary(schedule) : "";
-    const fullTitle = groupSummary 
-        ? `Semana Padrão 2026.1 - ${periodo} - ${groupSummary}`
-        : `Semana Padrão 2026.1 - ${periodo}`;
-    
-    const gridTitleContainer = document.createElement('div');
-    gridTitleContainer.innerHTML = `<h2 class="pdf-title">${fullTitle}</h2>`;
-    
-    const contentClone = scheduleContent.cloneNode(true) as HTMLElement;
-    contentClone.removeAttribute('id');
-    const grid = contentClone.querySelector('.grid');
-    if (grid) grid.className = 'pdf-export-grid';
-    
-    const bodyWrapper = document.createElement('div');
-    bodyWrapper.id = 'pdf-body-wrapper'; 
-    bodyWrapper.style.backgroundColor = '#ffffff';
-    bodyWrapper.style.width = `${CAPTURE_WIDTH}px`;
-    bodyWrapper.appendChild(gridTitleContainer);
-    bodyWrapper.appendChild(contentClone);
-    
-    tempContainer.appendChild(headerWrapper);
-    tempContainer.appendChild(bodyWrapper);
-    document.body.appendChild(tempContainer);
+            
+            <h2 class="pdf-title">${fullTitle}</h2>
+            
+            <div class="pdf-export-grid">
+                ${document.getElementById('schedule-grid-source')?.innerHTML || ''}
+            </div>
+        `;
 
-    // Ensure fonts are ready
-    await document.fonts.ready;
-    
-    // Increased Delay for Production Environment
-    setTimeout(async () => {
-      try {
+        document.body.appendChild(tempContainer);
+
+        await generatePdfViaBackend('pdf-export-temp', `Cronograma_${periodo}.pdf`, 'landscape');
         
-        // Common capture options
-        const captureOptions = {
-          scale: 2, // High quality
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          windowWidth: 1920, // Force browser to emulate desktop
-          windowHeight: 1080 // Force browser to emulate desktop
-        };
-
-        const headerCanvas = await html2canvas(headerWrapper, captureOptions);
-        const headerImgData = headerCanvas.toDataURL('image/png');
-        const headerImgProps = new jsPDF().getImageProperties(headerImgData);
-
-        const bodyCanvas = await html2canvas(bodyWrapper, captureOptions);
-        const bodyImgData = bodyCanvas.toDataURL('image/png');
-        const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
-        
-        const pdf = new jsPDF({
-          orientation: 'landscape',
-          unit: 'mm',
-          format: 'a4',
-        });
-
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        const ratio = pdfWidth / bodyImgProps.width; 
-        
-        const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
-        const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
-        
-        // DOM Scanning for Safe Slicing
-        const cards = Array.from(bodyWrapper.querySelectorAll('.aula-card, .free-slot-card'));
-        const cardPositions = cards.map(card => {
-            const rect = card.getBoundingClientRect();
-            const wrapperRect = bodyWrapper.getBoundingClientRect();
-            return {
-                top: rect.top - wrapperRect.top,
-                bottom: rect.bottom - wrapperRect.top,
-                left: rect.left - wrapperRect.left,
-                height: rect.height
-            };
-        });
-
-        let currentSourcePdfY = 0; 
-
-        // --- PAGE 1 ---
-        pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
-        
-        const page1MarginTop = headerPdfHeight + 5;
-        const page1AvailableHeight = pdfHeight - page1MarginTop - 10;
-
-        const currentSourcePx = currentSourcePdfY / ratio;
-        const page1AvailableHeightPx = page1AvailableHeight / ratio;
-        let proposedCutPx = currentSourcePx + page1AvailableHeightPx;
-        
-        // Max 4 Cards Constraint (PAGE 1)
-        const visibleCardsP1 = cardPositions.filter(p => p.top >= currentSourcePx - 5);
-        const columnsP1: Record<number, typeof cardPositions> = {};
-        
-        visibleCardsP1.forEach(p => {
-             const colKey = Math.round(p.left / 50) * 50; 
-             if (!columnsP1[colKey]) columnsP1[colKey] = [];
-             columnsP1[colKey].push(p);
-        });
-        
-        let countLimitPxP1 = Infinity;
-        Object.values(columnsP1).forEach(colCards => {
-            colCards.sort((a, b) => a.top - b.top);
-            if (colCards.length > 4) {
-                const card4 = colCards[3]; 
-                const card5 = colCards[4]; 
-                const midpoint = (card4.bottom + card5.top) / 2;
-                
-                if (midpoint > currentSourcePx && midpoint < countLimitPxP1) {
-                     countLimitPxP1 = midpoint;
-                }
-            }
-        });
-        
-        if (countLimitPxP1 < proposedCutPx) {
-            proposedCutPx = countLimitPxP1;
-        }
-
-        // Collision Detection (Aggressive Buffer)
-        const collisionP1 = cardPositions.find(pos => 
-            pos.top < proposedCutPx && pos.bottom > proposedCutPx
-        );
-
-        if (collisionP1) {
-            // SAFETY BUFFER INCREASED TO 60PX
-            proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 60);
-        }
-        
-        const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
-
-        pdf.addImage(bodyImgData, 'PNG', 0, page1MarginTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
-        
-        pdf.setFillColor(255, 255, 255);
-        pdf.rect(0, page1MarginTop + cutHeightMm, pdfWidth, pdfHeight - (page1MarginTop + cutHeightMm), 'F');
-
-        currentSourcePdfY += cutHeightMm;
-
-        // --- Subsequent Pages ---
-        while (currentSourcePdfY < bodyTotalPdfHeight - 1) { 
-             pdf.addPage();
-             
-             const pageTop = 10; 
-             const pageAvailableHeight = pdfHeight - pageTop - 10;
-             
-             const currentSubSourcePx = currentSourcePdfY / ratio;
-             const pageAvailableHeightPx = pageAvailableHeight / ratio;
-             let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
-
-             const visibleCardsSub = cardPositions.filter(p => p.top >= currentSubSourcePx - 5);
-             const columnsSub: Record<number, typeof cardPositions> = {};
-             
-             visibleCardsSub.forEach(p => {
-                  const colKey = Math.round(p.left / 50) * 50;
-                  if (!columnsSub[colKey]) columnsSub[colKey] = [];
-                  columnsSub[colKey].push(p);
-             });
-             
-             let countLimitPxSub = Infinity;
-             Object.values(columnsSub).forEach(colCards => {
-                colCards.sort((a, b) => a.top - b.top);
-                if (colCards.length > 4) {
-                    const card4 = colCards[3];
-                    const card5 = colCards[4];
-                    const midpoint = (card4.bottom + card5.top) / 2;
-                    
-                    if (midpoint > currentSubSourcePx && midpoint < countLimitPxSub) {
-                        countLimitPxSub = midpoint;
-                    }
-                }
-             });
-             
-             if (countLimitPxSub < nextProposedCutPx) {
-                 nextProposedCutPx = countLimitPxSub;
-             }
-             
-             const nextCollision = cardPositions.find(pos => 
-                pos.top < nextProposedCutPx && pos.bottom > nextProposedCutPx
-             );
-             
-             if (nextCollision) {
-                 // SAFETY BUFFER INCREASED TO 60PX
-                 nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 60);
-             }
-
-             const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
-
-             pdf.addImage(bodyImgData, 'PNG', 0, pageTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
-             
-             if (pageTop + nextCutHeightMm < pdfHeight) {
-                 pdf.setFillColor(255, 255, 255);
-                 pdf.rect(0, pageTop + nextCutHeightMm, pdfWidth, pdfHeight - (pageTop + nextCutHeightMm), 'F');
-             }
-             
-             pdf.setFillColor(255, 255, 255);
-             pdf.rect(0, 0, pdfWidth, pageTop, 'F');
-
-             currentSourcePdfY += nextCutHeightMm;
-             
-             if (nextCutHeightMm <= 0.1) break;
-        }
-
-        window.open(pdf.output('bloburl'), '_blank');
-
-      } catch (e) {
-        console.error('Erro ao gerar o PDF:', e);
-        alert('Ocorreu um erro ao gerar o PDF. Tente novamente.');
-      } finally {
         document.body.removeChild(tempContainer);
+
+    } catch (e) {
+        console.error("Erro ao gerar PDF:", e);
+        alert("Não foi possível gerar o PDF. Verifique se o servidor backend está rodando.");
+    } finally {
         setIsGeneratingPdf(false);
-      }
-    }, 2000); // 2 Seconds Delay ensures CSS lock-in
+    }
   };
   
   const hasClasses = schedule && schedule.length > 0;
@@ -468,12 +279,12 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
             </>
           ) : (
             <>
-              <ExternalLinkIcon className="w-4 h-4" /> Visualizar PDF
+              <ExternalLinkIcon className="w-4 h-4" /> Baixar PDF (Alta Qualidade)
             </>
           )}
         </button>
       </div>
-      <div id="schedule-pdf-content">
+      <div id="schedule-grid-source">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
           {schedule.map((dia, index) => (
             <div key={dia.dia} className="animate-fade-in h-full" style={{ animationDelay: `${index * 50}ms` }}>

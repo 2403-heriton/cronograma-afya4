@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import type { Event } from '../types';
 import { stringToColor } from '../services/colorService';
@@ -11,8 +10,8 @@ import ClipboardListIcon from './icons/ClipboardListIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import ExternalLinkIcon from './icons/ExternalLinkIcon';
 import SearchIcon from './icons/SearchIcon';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
+import { afyaLogoDataUrl } from './icons/AfyaLogo';
+import { generatePdfViaBackend } from './pdfUtils';
 
 const EventInfo: React.FC<{ icon: React.ReactNode; label: string; value: string }> = ({ icon, label, value }) => (
   <div className="flex items-start gap-2 text-sm text-gray-400">
@@ -51,7 +50,7 @@ const EventCard: React.FC<{ event: Event }> = ({ event }) => {
 
   return (
     <div 
-      className="bg-slate-800 p-4 rounded-lg border-l-4 border border-slate-700 shadow-md flex flex-col h-full event-card-pdf relative overflow-hidden"
+      className="bg-slate-800 p-4 rounded-lg border-l-4 border border-slate-700 shadow-md flex flex-col h-full event-card-pdf relative overflow-hidden break-inside-avoid"
       style={{ 
         borderLeftColor: color,
         '--event-color': color
@@ -141,246 +140,47 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
   const sortedMonthKeys = useMemo(() => Object.keys(groupedByMonth).sort(), [groupedByMonth]);
 
   const handleViewPdf = async () => {
-    const eventsContent = document.getElementById('events-pdf-content');
-    if (!eventsContent) return;
-  
     setIsGeneratingPdf(true);
   
-    const CAPTURE_WIDTH = 1280;
-    
-    const tempContainer = document.createElement('div');
-    tempContainer.className = 'pdf-export-container'; 
-    tempContainer.classList.add('capturing');
-    
-    const headerWrapper = document.createElement('div');
-    headerWrapper.className = 'pdf-header-wrapper';
-    headerWrapper.style.width = `${CAPTURE_WIDTH}px`;
+    try {
+        const tempContainer = document.createElement('div');
+        tempContainer.className = 'pdf-export-container'; 
+        tempContainer.id = 'events-export-temp';
+        
+        const logoSrc = afyaLogoDataUrl;
 
-    const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
-
-    headerWrapper.innerHTML = `
-        <div class="pdf-header">
-            <div>
-                 <img src="${logoSrc}" alt="Afya Logo" crossorigin="anonymous" />
-            </div>
-            <div>
-                <h2 style="color: #0057B8 !important; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
-                <div style="color: #CE0058 !important; font-size: 11px; font-weight: 600;">
-                    Coordenador do Curso: Prof. Kristhea Karyne <span style="margin:0 6px;">|</span> 
-                    Coordenadora Adjunta: Prof. Roberya Viana
+        tempContainer.innerHTML = `
+            <div class="pdf-header">
+                <div>
+                     <img src="${logoSrc}" alt="Afya Logo" style="height: 55px; width: auto; object-fit: contain;" />
+                </div>
+                <div style="text-align: right;">
+                    <h2 style="color: #0057B8 !important; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
+                    <div style="color: #CE0058 !important; font-size: 11px; font-weight: 600;">
+                        Coordenador do Curso: Prof. Kristhea Karyne <span style="margin:0 6px;">|</span> 
+                        Coordenadora Adjunta: Prof. Roberya Viana
+                    </div>
                 </div>
             </div>
-        </div>
-    `;
 
-    const gridTitleContainer = document.createElement('div');
-    gridTitleContainer.innerHTML = `<h2 class="pdf-title">Calendário de Eventos - ${periodo}</h2>`;
+            <h2 class="pdf-title">Calendário de Eventos - ${periodo}</h2>
+            
+            <div class="pdf-export-event-grid">
+                ${document.getElementById('events-grid-source')?.innerHTML || ''}
+            </div>
+        `;
+        
+        document.body.appendChild(tempContainer);
 
-    const contentClone = eventsContent.cloneNode(true) as HTMLElement;
-    contentClone.removeAttribute('id');
-    const monthGroups = contentClone.querySelectorAll('.event-month-group-pdf');
-    monthGroups.forEach(group => {
-        const grid = group.querySelector('.grid');
-        if (grid) {
-            grid.className = 'pdf-export-event-grid';
-        }
-    });
-    
-    const bodyWrapper = document.createElement('div');
-    bodyWrapper.id = 'pdf-events-body-wrapper';
-    bodyWrapper.style.backgroundColor = '#ffffff';
-    bodyWrapper.style.width = `${CAPTURE_WIDTH}px`;
-    bodyWrapper.appendChild(gridTitleContainer);
-    bodyWrapper.appendChild(contentClone);
-    
-    tempContainer.appendChild(headerWrapper);
-    tempContainer.appendChild(bodyWrapper);
-    document.body.appendChild(tempContainer);
-
-    await document.fonts.ready;
-    
-    setTimeout(async () => {
-      try {
+        await generatePdfViaBackend('events-export-temp', `Eventos_${periodo}.pdf`, 'landscape');
         
-        const captureOptions = {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          windowWidth: 1920,
-          windowHeight: 1080
-        };
-
-        const headerCanvas = await html2canvas(headerWrapper, captureOptions);
-        const headerImgData = headerCanvas.toDataURL('image/png');
-        const headerImgProps = new jsPDF().getImageProperties(headerImgData);
-        
-        const bodyCanvas = await html2canvas(bodyWrapper, captureOptions);
-        const bodyImgData = bodyCanvas.toDataURL('image/png');
-        const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
-
-        const pdf = new jsPDF({
-          orientation: 'landscape',
-          unit: 'mm',
-          format: 'a4',
-        });
-
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        const ratio = pdfWidth / bodyImgProps.width;
-        
-        const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
-        const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
-
-        const elementsToScan = Array.from(bodyWrapper.querySelectorAll('.event-card-pdf, .event-month-group-pdf h3'));
-        
-        const elementPositions = elementsToScan.map(el => {
-            const rect = el.getBoundingClientRect();
-            const wrapperRect = bodyWrapper.getBoundingClientRect();
-            const isCard = el.classList.contains('event-card-pdf');
-            return {
-                top: rect.top - wrapperRect.top,
-                bottom: rect.bottom - wrapperRect.top,
-                left: rect.left - wrapperRect.left,
-                isCard: isCard
-            };
-        });
-
-        let currentSourcePdfY = 0;
-
-        // --- PAGE 1 ---
-        pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
-        
-        const page1MarginTop = headerPdfHeight + 5;
-        const page1AvailableHeight = pdfHeight - page1MarginTop - 10; 
-        
-        const currentSourcePx = currentSourcePdfY / ratio;
-        const page1AvailableHeightPx = page1AvailableHeight / ratio;
-        let proposedCutPx = currentSourcePx + page1AvailableHeightPx;
-        
-        // Logic: Max 3 Cards per column per page
-        const visibleElementsP1 = elementPositions.filter(p => p.top >= currentSourcePx - 5);
-        const cardsP1 = visibleElementsP1.filter(p => p.isCard);
-        const columnsP1: Record<number, typeof elementPositions> = {};
-        
-        cardsP1.forEach(p => {
-             const colKey = Math.round(p.left / 420) * 420; 
-             if (!columnsP1[colKey]) columnsP1[colKey] = [];
-             columnsP1[colKey].push(p);
-        });
-        
-        let countLimitPxP1 = Infinity;
-        
-        Object.values(columnsP1).forEach(colCards => {
-            colCards.sort((a, b) => a.top - b.top);
-            if (colCards.length > 3) {
-                const card3 = colCards[2]; 
-                const card4 = colCards[3]; 
-                const midpoint = (card3.bottom + card4.top) / 2;
-                
-                if (midpoint > currentSourcePx && midpoint < countLimitPxP1) {
-                    countLimitPxP1 = midpoint;
-                }
-            }
-        });
-        
-        if (countLimitPxP1 < proposedCutPx) {
-            proposedCutPx = countLimitPxP1;
-        }
-
-        // Collision Detection
-        const collisionP1 = elementPositions.find(pos => 
-            pos.top < proposedCutPx && pos.bottom > proposedCutPx
-        );
-        
-        if (collisionP1) {
-             proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 60); // Increased safety buffer
-        }
-        
-        const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
-
-        pdf.addImage(bodyImgData, 'PNG', 0, page1MarginTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
-        
-        pdf.setFillColor(255, 255, 255);
-        pdf.rect(0, page1MarginTop + cutHeightMm, pdfWidth, pdfHeight - (page1MarginTop + cutHeightMm), 'F');
-        
-        currentSourcePdfY += cutHeightMm;
-
-        // --- SUBSEQUENT PAGES ---
-        while (currentSourcePdfY < bodyTotalPdfHeight - 1) {
-             pdf.addPage();
-             
-             const pageTop = 10;
-             const pageAvailableHeight = pdfHeight - pageTop - 10;
-             
-             const currentSubSourcePx = currentSourcePdfY / ratio;
-             const pageAvailableHeightPx = pageAvailableHeight / ratio;
-             let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
-             
-             const visibleElementsSub = elementPositions.filter(p => p.top >= currentSubSourcePx - 5);
-             const cardsSub = visibleElementsSub.filter(p => p.isCard);
-             const columnsSub: Record<number, typeof elementPositions> = {};
-             
-             cardsSub.forEach(p => {
-                 const colKey = Math.round(p.left / 420) * 420;
-                 if (!columnsSub[colKey]) columnsSub[colKey] = [];
-                 columnsSub[colKey].push(p);
-             });
-             
-             let countLimitPxSub = Infinity;
-             
-             Object.values(columnsSub).forEach(colCards => {
-                 colCards.sort((a, b) => a.top - b.top);
-                 if (colCards.length > 3) {
-                     const card3 = colCards[2];
-                     const card4 = colCards[3];
-                     const midpoint = (card3.bottom + card4.top) / 2;
-                     
-                     if (midpoint > currentSubSourcePx && midpoint < countLimitPxSub) {
-                         countLimitPxSub = midpoint;
-                     }
-                 }
-             });
-             
-             if (countLimitPxSub < nextProposedCutPx) {
-                 nextProposedCutPx = countLimitPxSub;
-             }
-
-             const nextCollision = elementPositions.find(pos => 
-                pos.top < nextProposedCutPx && pos.bottom > nextProposedCutPx
-             );
-             
-             if (nextCollision) {
-                  nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 60);
-             }
-             
-             const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
-             
-             pdf.addImage(bodyImgData, 'PNG', 0, pageTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
-             
-             if (pageTop + nextCutHeightMm < pdfHeight) {
-                  pdf.setFillColor(255, 255, 255);
-                  pdf.rect(0, pageTop + nextCutHeightMm, pdfWidth, pdfHeight - (pageTop + nextCutHeightMm), 'F');
-             }
-             
-             pdf.setFillColor(255, 255, 255);
-             pdf.rect(0, 0, pdfWidth, pageTop, 'F');
-             
-             currentSourcePdfY += nextCutHeightMm;
-             
-             if (nextCutHeightMm <= 0.1) break;
-        }
-
-        window.open(pdf.output('bloburl'), '_blank');
-
-      } catch (e) {
-        console.error('Erro ao gerar o PDF:', e);
-        alert('Ocorreu um erro ao gerar o PDF. Tente novamente.');
-      } finally {
         document.body.removeChild(tempContainer);
+    } catch (e) {
+         console.error("Erro ao gerar PDF:", e);
+         alert("Não foi possível gerar o PDF. Verifique se o backend está ativo.");
+    } finally {
         setIsGeneratingPdf(false);
-      }
-    }, 2000); 
+    }
   };
 
   if (!events || events.length === 0) {
@@ -453,7 +253,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
                   </>
                 ) : (
                   <>
-                    <ExternalLinkIcon className="w-4 h-4" /> Visualizar PDF
+                    <ExternalLinkIcon className="w-4 h-4" /> Baixar PDF (Alta Qualidade)
                   </>
                 )}
               </button>
@@ -461,7 +261,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
           </div>
       </div>
       
-      <div id="events-pdf-content">
+      <div id="events-grid-source">
         {(!filteredEvents || filteredEvents.length === 0) ? (
           <div className="text-center text-gray-400 p-12 bg-slate-800/50 rounded-lg border border-slate-700/50 border-dashed">
               <SearchIcon className="w-12 h-12 mx-auto text-gray-600 mb-3" />
@@ -482,13 +282,13 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
               }).format(monthDate);
 
               return (
-                <div key={monthKey} className="animate-fade-in event-month-group-pdf" style={{ animationDelay: `${index * 150}ms` }}>
+                <div key={monthKey} className="animate-fade-in event-month-group-pdf break-inside-avoid" style={{ animationDelay: `${index * 150}ms` }}>
                     <h3 className="text-2xl font-bold text-afya-pink mb-4 capitalize pl-2 border-l-4 border-afya-pink">
                       {monthName}
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {eventsInMonth.map((event, eventIndex) => (
-                            <div key={`${event.disciplina}-${event.data}-${eventIndex}`} className="transition-transform duration-300 hover:scale-[1.02]">
+                            <div key={`${event.disciplina}-${event.data}-${eventIndex}`} className="transition-transform duration-300 hover:scale-[1.02] event-card-pdf break-inside-avoid">
                                 <EventCard event={event} />
                             </div>
                         ))}

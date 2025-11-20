@@ -28,41 +28,16 @@
 
     <style>
       /* =========================================
-         PDF EXPORT STYLES - RIGID LAYOUT (PIXEL PERFECT)
-         These styles are specific to the PDF generation process and 
-         need to exist outside of Tailwind's purge process.
+         PDF EXPORT STYLES - BACKEND RENDERING
+         These styles are used by the Puppeteer backend.
          ========================================= */
-      .pdf-export-container {
-        position: fixed !important; 
-        top: 0;
-        left: 0;
-        z-index: -9999;
-        visibility: hidden; 
-        
-        background-color: #ffffff !important;
-        font-family: "Helvetica Neue", Helvetica, Arial, sans-serif !important;
-        color: #000000 !important;
-        
-        width: 1280px !important; 
-        min-width: 1280px !important;
-        max-width: 1280px !important;
-        
-        font-size: 12px !important; 
-        line-height: 1.3 !important; 
-        
-        -webkit-print-color-adjust: exact !important;
-        print-color-adjust: exact !important;
-        box-sizing: border-box !important;
-        display: block !important;
-        margin: 0 !important;
-        padding: 0 !important;
-      }
       
-      .pdf-export-container.capturing {
-          visibility: visible !important;
-          opacity: 1 !important;
+      /* By default, hide the export container on screen */
+      .pdf-export-container {
+        display: none;
       }
 
+      /* Styles specific to the PDF structure when rendered */
       .pdf-export-container * {
         box-sizing: border-box !important;
         color: #111827 !important;
@@ -80,13 +55,6 @@
          padding: 0 40px !important;
          margin-bottom: 10px !important;
          background-color: white !important;
-      }
-
-      .pdf-header img {
-         object-fit: contain !important;
-         height: 55px !important;
-         width: auto !important;
-         display: block !important;
       }
 
       .pdf-title {
@@ -121,6 +89,8 @@
         display: flex !important;
         flex-direction: column !important;
         overflow: hidden !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
       }
       
       .pdf-export-container .dia-card h3 {
@@ -133,6 +103,8 @@
         text-align: center !important;
         width: 100% !important;
         margin: 0 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
 
       .pdf-export-container .dia-card > div {
@@ -154,6 +126,8 @@
         display: flex !important;
         flex-direction: column !important;
         position: relative !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
       }
 
       .pdf-export-container .aula-card .discipline-header {
@@ -164,6 +138,8 @@
         align-items: center !important;
         justify-content: space-between !important;
         min-height: 35px !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
 
       .pdf-export-container .aula-card h4 {
@@ -241,6 +217,8 @@
         flex-direction: column !important;
         align-items: center !important;
         justify-content: center !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
       }
       .pdf-export-container .free-slot-card svg {
          width: 20px !important;
@@ -252,21 +230,9 @@
          color: #14532d !important;
          font-weight: 700 !important;
       }
-      
-      /* Watermark */
-      .pdf-watermark {
-         position: absolute;
-         top: 50%;
-         right: 40px;
-         transform: translateY(-50%);
-         opacity: 0.1;
-         width: 280px !important;
-         height: auto !important;
-         z-index: 0;
-      }
 
       /* =========================================
-         EVENTS PDF STYLES - RIGID LAYOUT
+         EVENTS PDF STYLES
          ========================================= */
       .pdf-export-event-grid {
         display: grid !important;
@@ -276,6 +242,11 @@
         padding: 0 40px !important;
       }
       
+      .pdf-export-container .event-month-group-pdf {
+         break-inside: avoid !important;
+         page-break-inside: avoid !important;
+      }
+
       .pdf-export-container .event-month-group-pdf h3 {
          color: #CE0058 !important;
          border-left: 4px solid #CE0058 !important;
@@ -291,6 +262,8 @@
         border-left: 6px solid var(--event-color) !important;
         padding: 12px !important;
         font-size: 12px !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
       }
       
       .pdf-export-container .event-card-pdf p {
@@ -300,15 +273,10 @@
          line-height: 1.2 !important;
       }
       
-      /* Portrait overrides for PDF (if needed) */
-      .pdf-export-container.portrait {
-          width: 900px !important;
-          min-width: 900px !important;
-          max-width: 900px !important;
-      }
-      
-      .pdf-export-container.portrait .pdf-export-event-grid {
-          grid-template-columns: repeat(2, 1fr) !important;
+      /* General Print Utilities */
+      .break-inside-avoid {
+          break-inside: avoid !important;
+          page-break-inside: avoid !important;
       }
     </style>
 <script type="importmap">
@@ -317,8 +285,6 @@
     "react": "https://aistudiocdn.com/react@^19.2.0",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
     "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "jspdf": "https://aistudiocdn.com/jspdf@^3.0.4",
-    "html2canvas": "https://aistudiocdn.com/html2canvas@^1.4.1",
     "xlsx": "https://aistudiocdn.com/xlsx@^0.18.5",
     "vite": "https://aistudiocdn.com/vite@^7.2.4",
     "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1"
