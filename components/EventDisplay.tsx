@@ -136,52 +136,39 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
   
     setIsGeneratingPdf(true);
   
-    const pdfContainer = document.createElement('div');
-    pdfContainer.className = 'pdf-export-container';
+    // --- 1. Prepare Temporary Container ---
+    const tempContainer = document.createElement('div');
+    tempContainer.className = 'pdf-export-container'; // Will apply 1280px width from index.html
+    const CAPTURE_WIDTH = 1280;
     
-    const watermark = document.createElement('img');
-    watermark.src = 'https://cdn.prod.website-files.com/65e07e5b264deb36f6e003d9/6883f05c26e613e478e32cd9_A.png';
-    watermark.alt = "Marca d'água Afya";
-    watermark.className = 'pdf-watermark';
-    pdfContainer.appendChild(watermark);
+    // 1a. Create Header Element (Identical to Schedule Display)
+    const headerWrapper = document.createElement('div');
+    headerWrapper.style.backgroundColor = '#ffffff';
+    headerWrapper.style.padding = '20px 40px 0 40px';
+    headerWrapper.style.width = `${CAPTURE_WIDTH}px`;
 
-    const header = document.createElement('div');
-    header.className = 'pdf-header';
+    const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
 
-    // Container Esquerdo (Logo)
-    const leftContainer = document.createElement('div');
-    leftContainer.className = 'pdf-header-left';
-    
-    const logo = document.createElement('img');
-    logo.src = 'https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png';
-    logo.alt = 'Logo Afya Ciências Médicas';
-    logo.className = 'pdf-logo';
-    leftContainer.appendChild(logo);
+    headerWrapper.innerHTML = `
+        <div class="pdf-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #CE0058; padding-bottom: 15px; margin-bottom: 10px;">
+            <div style="flex-shrink: 0;">
+                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain;" alt="Afya Logo" crossorigin="anonymous" />
+            </div>
+            <div style="text-align: right; font-family: sans-serif;">
+                <h2 style="color: #CE0058; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
+                <div style="color: #4b5563; font-size: 11px; line-height: 1.4;">
+                    <span style="font-weight: 600; color: #1f2937;">Coordenador do Curso:</span> Prof. Kristhea Karyne <span style="color:#CE0058; margin:0 6px;">|</span> 
+                    <span style="font-weight: 600; color: #1f2937;">Coordenadora Adjunta:</span> Prof. Roberya Viana
+                </div>
+            </div>
+        </div>
+    `;
 
-    // Container Direito (Coordenação) - Mantendo consistência com o Cronograma
-    const rightContainer = document.createElement('div');
-    rightContainer.className = 'pdf-header-right';
+    // 1b. Create Title
+    const gridTitleContainer = document.createElement('div');
+    gridTitleContainer.innerHTML = `<h2 class="pdf-title" style="text-align: center; font-size: 20px; font-weight: bold; color: #374151; margin: 15px 0;">Calendário de Eventos - ${periodo}</h2>`;
 
-    const coordTitle = document.createElement('div');
-    coordTitle.className = 'pdf-coord-title';
-    coordTitle.textContent = 'COORDENAÇÃO DO CURSO DE MEDICINA';
-
-    const coordNames = document.createElement('div');
-    coordNames.className = 'pdf-coord-names';
-    coordNames.innerHTML = 'Coordenador do Curso Prof. Kristhea Karyne <span style="color:#CE0058; margin:0 5px">|</span> Coordenadora Adjunta Prof. Roberya Viana';
-
-    rightContainer.appendChild(coordTitle);
-    rightContainer.appendChild(coordNames);
-
-    header.appendChild(leftContainer);
-    header.appendChild(rightContainer);
-    pdfContainer.appendChild(header);
-    
-    const eventsTitle = document.createElement('h2');
-    eventsTitle.className = 'pdf-title';
-    eventsTitle.textContent = `Calendário de Eventos - ${periodo}`;
-    pdfContainer.appendChild(eventsTitle);
-
+    // 1c. Clone Body Content
     const contentClone = eventsContent.cloneNode(true) as HTMLElement;
     contentClone.removeAttribute('id');
     const monthGroups = contentClone.querySelectorAll('.event-month-group-pdf');
@@ -191,53 +178,148 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
             grid.className = 'pdf-export-event-grid';
         }
     });
-    pdfContainer.appendChild(contentClone);
-
-    document.body.appendChild(pdfContainer);
+    
+    // Body Wrapper
+    const bodyWrapper = document.createElement('div');
+    bodyWrapper.id = 'pdf-events-body-wrapper';
+    bodyWrapper.style.backgroundColor = '#ffffff';
+    bodyWrapper.style.padding = '10px 40px 40px 40px';
+    bodyWrapper.style.width = `${CAPTURE_WIDTH}px`;
+    bodyWrapper.appendChild(gridTitleContainer);
+    bodyWrapper.appendChild(contentClone);
+    
+    tempContainer.appendChild(headerWrapper);
+    tempContainer.appendChild(bodyWrapper);
+    document.body.appendChild(tempContainer);
 
     requestAnimationFrame(async () => {
       try {
         const { jsPDF } = window.jspdf;
-        const canvas = await html2canvas(pdfContainer, {
+        
+        // Capture Header
+        const headerCanvas = await html2canvas(headerWrapper, {
           scale: 2,
           useCORS: true,
-          backgroundColor: '#ffffff'
+          backgroundColor: '#ffffff',
+          logging: false
         });
-        const imgData = canvas.toDataURL('image/png');
+        const headerImgData = headerCanvas.toDataURL('image/png');
+        const headerImgProps = new jsPDF().getImageProperties(headerImgData);
+        
+        // Capture Body
+        const bodyCanvas = await html2canvas(bodyWrapper, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false
+        });
+        const bodyImgData = bodyCanvas.toDataURL('image/png');
+        const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
 
         const pdf = new jsPDF({
           orientation: 'landscape',
           unit: 'mm',
-          format: 'a3',
+          format: 'a4',
         });
 
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
+        const ratio = pdfWidth / bodyImgProps.width;
         
-        const imgProps = pdf.getImageProperties(imgData);
-        const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
+        const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
+
+        // Scan DOM for Safe Slicing (Cards AND Month Headers)
+        // We don't want to cut an event card or a Month Title in half.
+        const elementsToAvoidCutting = Array.from(bodyWrapper.querySelectorAll('.event-card-pdf, .event-month-group-pdf h3'));
+        const elementPositions = elementsToAvoidCutting.map(el => {
+            const rect = el.getBoundingClientRect();
+            const wrapperRect = bodyWrapper.getBoundingClientRect();
+            return {
+                top: rect.top - wrapperRect.top,
+                bottom: rect.bottom - wrapperRect.top,
+            };
+        });
+
+        let currentSourcePdfY = 0;
+
+        // --- PAGE 1 ---
+        pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
         
-        let heightLeft = imgHeight;
-        let position = 0;
+        const page1MarginTop = headerPdfHeight + 5;
+        const page1AvailableHeight = pdfHeight - page1MarginTop - 10; // 10mm bottom margin
+        
+        const currentSourcePx = currentSourcePdfY / ratio;
+        const page1AvailableHeightPx = page1AvailableHeight / ratio;
+        let proposedCutPx = currentSourcePx + page1AvailableHeightPx;
+        
+        // Collision Detection P1
+        const collisionP1 = elementPositions.find(pos => 
+            pos.top < proposedCutPx && pos.bottom > proposedCutPx
+        );
+        
+        if (collisionP1) {
+             // Move cut up to the top of the element, ensuring we don't cut it
+             // Add small buffer (-15px)
+             proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 15);
+        }
+        
+        const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
 
-        pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-        heightLeft -= pdfHeight;
+        pdf.addImage(bodyImgData, 'PNG', 0, page1MarginTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
+        
+        // Mask Bottom
+        pdf.setFillColor(255, 255, 255);
+        pdf.rect(0, page1MarginTop + cutHeightMm, pdfWidth, pdfHeight - (page1MarginTop + cutHeightMm), 'F');
+        
+        currentSourcePdfY += cutHeightMm;
 
-        while (heightLeft > 0) {
-          position = heightLeft - imgHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, 'PNG', 0, position, pdfWidth, imgHeight);
-          heightLeft -= pdfHeight;
+        // --- SUBSEQUENT PAGES ---
+        while (currentSourcePdfY < bodyTotalPdfHeight - 1) {
+             pdf.addPage();
+             
+             const pageTop = 10;
+             const pageAvailableHeight = pdfHeight - pageTop - 10;
+             
+             const currentSubSourcePx = currentSourcePdfY / ratio;
+             const pageAvailableHeightPx = pageAvailableHeight / ratio;
+             let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
+             
+             // Collision Detection Sub
+             const nextCollision = elementPositions.find(pos => 
+                pos.top < nextProposedCutPx && pos.bottom > nextProposedCutPx
+             );
+             
+             if (nextCollision) {
+                  nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 15);
+             }
+             
+             const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
+             
+             pdf.addImage(bodyImgData, 'PNG', 0, pageTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
+             
+             // Mask Bottom
+             if (pageTop + nextCutHeightMm < pdfHeight) {
+                  pdf.setFillColor(255, 255, 255);
+                  pdf.rect(0, pageTop + nextCutHeightMm, pdfWidth, pdfHeight - (pageTop + nextCutHeightMm), 'F');
+             }
+             
+             // Mask Top
+             pdf.setFillColor(255, 255, 255);
+             pdf.rect(0, 0, pdfWidth, pageTop, 'F');
+             
+             currentSourcePdfY += nextCutHeightMm;
+             
+             if (nextCutHeightMm <= 0.1) break;
         }
 
-        const pdfUrl = pdf.output('bloburl');
-        window.open(pdfUrl, '_blank');
+        window.open(pdf.output('bloburl'), '_blank');
 
       } catch (e) {
         console.error('Erro ao gerar o PDF:', e);
         alert('Ocorreu um erro ao gerar o PDF. Tente novamente.');
       } finally {
-        document.body.removeChild(pdfContainer);
+        document.body.removeChild(tempContainer);
         setIsGeneratingPdf(false);
       }
     });

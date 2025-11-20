@@ -100,11 +100,11 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
                 </div>
                 
                 <div className="space-y-1 text-gray-400 text-xs">
-                     <div className="flex items-start gap-2">
+                     <div className="flex items-start gap-2 items-start">
                         <LocationIcon className="w-3 h-3 text-afya-pink shrink-0 mt-0.5" />
                         <span className="" title={sessao.sala}>Sala: <span className="text-gray-300 font-medium">{sessao.sala}</span></span>
                      </div>
-                     <div className="flex items-start gap-2">
+                     <div className="flex items-start gap-2 items-start">
                         <UserIcon className="w-3 h-3 text-afya-pink shrink-0 mt-0.5" />
                          <span className="" title={sessao.professor}>Prof: <span className="text-gray-300 font-medium">{sessao.professor}</span></span>
                      </div>
@@ -219,11 +219,15 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     const tempContainer = document.createElement('div');
     tempContainer.className = 'pdf-export-container';
     
+    // Configuração de largura A4 Paisagem otimizada
+    // 1280px garante boa resolução para A4 sem ficar minúsculo
+    const CAPTURE_WIDTH = 1280;
+
     // 1a. Create Header Element
     const headerWrapper = document.createElement('div');
     headerWrapper.style.backgroundColor = '#ffffff';
     headerWrapper.style.padding = '20px 40px 0 40px';
-    headerWrapper.style.width = '1280px'; // Reduced from 1600px for A4 fit
+    headerWrapper.style.width = `${CAPTURE_WIDTH}px`;
 
     const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
 
@@ -249,7 +253,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         : `Semana Padrão 2026.1 - ${periodo}`;
     
     const gridTitleContainer = document.createElement('div');
-    gridTitleContainer.innerHTML = `<h2 class="pdf-title" style="text-align: center; font-size: 24px; font-weight: bold; color: #374151; margin: 20px 0;">${fullTitle}</h2>`;
+    gridTitleContainer.innerHTML = `<h2 class="pdf-title" style="text-align: center; font-size: 20px; font-weight: bold; color: #374151; margin: 15px 0;">${fullTitle}</h2>`;
     
     // 1c. Clone Grid Content
     const contentClone = scheduleContent.cloneNode(true) as HTMLElement;
@@ -262,7 +266,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     bodyWrapper.id = 'pdf-body-wrapper'; // ID for DOM query during safe slicing
     bodyWrapper.style.backgroundColor = '#ffffff';
     bodyWrapper.style.padding = '10px 40px 40px 40px';
-    bodyWrapper.style.width = '1280px'; // Reduced from 1600px for A4 fit
+    bodyWrapper.style.width = `${CAPTURE_WIDTH}px`;
     bodyWrapper.appendChild(gridTitleContainer);
     bodyWrapper.appendChild(contentClone);
     
@@ -286,7 +290,6 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         const headerImgProps = new jsPDF().getImageProperties(headerImgData);
 
         // Capture Body
-        // Note: We capture the entire long body once.
         const bodyCanvas = await html2canvas(bodyWrapper, {
           scale: 2,
           useCORS: true,
@@ -312,11 +315,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
         
         // Dimensions in Canvas units (pixels) - used for collision detection
-        const scaleFactor = 2; // HTML2Canvas scale
-        const domToCanvasRatio = scaleFactor; 
-        
         // Scan the DOM to find all potential cut-points (cards)
-        // We need their positions relative to the bodyWrapper top
         const cards = Array.from(bodyWrapper.querySelectorAll('.aula-card, .free-slot-card'));
         const cardPositions = cards.map(card => {
             const rect = card.getBoundingClientRect();
@@ -324,49 +323,76 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
             return {
                 top: rect.top - wrapperRect.top,
                 bottom: rect.bottom - wrapperRect.top,
+                left: rect.left - wrapperRect.left,
                 height: rect.height
             };
         });
 
         let currentSourcePdfY = 0; // Current Y position in the source image (in PDF mm equivalents)
 
-        // --- Page 1 ---
+        // --- PAGE 1 ---
+        
         // Draw Header
         pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
         
         const page1MarginTop = headerPdfHeight + 5;
         const page1AvailableHeight = pdfHeight - page1MarginTop - 10; // 10mm bottom margin
 
-        // Calculate Safe Cut for Page 1
-        let cutHeight = page1AvailableHeight;
-        const proposedCutY_mm = currentSourcePdfY + cutHeight;
+        // 1. Calculate Safe Cut for Page 1 (Pixel Conversion)
+        const currentSourcePx = currentSourcePdfY / ratio;
+        const page1AvailableHeightPx = page1AvailableHeight / ratio;
+        let proposedCutPx = currentSourcePx + page1AvailableHeightPx;
         
-        // Convert mm to pixels to check against DOM positions
-        // Since ratio = pdfWidth(mm) / canvasWidth(px)
-        // px = mm / ratio
-        const proposedCutY_px = proposedCutY_mm / ratio;
+        // 2. Max 4 Cards per Column Constraint (PAGE 1)
+        const visibleCardsP1 = cardPositions.filter(p => p.top >= currentSourcePx - 5);
+        const columnsP1: Record<number, typeof cardPositions> = {};
+        
+        visibleCardsP1.forEach(p => {
+             const colKey = Math.round(p.left / 50) * 50; 
+             if (!columnsP1[colKey]) columnsP1[colKey] = [];
+             columnsP1[colKey].push(p);
+        });
+        
+        let countLimitPxP1 = Infinity;
+        Object.values(columnsP1).forEach(colCards => {
+            colCards.sort((a, b) => a.top - b.top);
+            // SE TEM MAIS DE 4 CARDS, CORTAR APÓS O 4º
+            if (colCards.length > 4) {
+                const card4 = colCards[3]; // index 3 is the 4th card
+                const card5 = colCards[4]; // index 4 is the 5th card
+                // Calculate midpoint for cleaner cut between card 4 and 5
+                const midpoint = (card4.bottom + card5.top) / 2;
+                
+                if (midpoint > currentSourcePx && midpoint < countLimitPxP1) {
+                     countLimitPxP1 = midpoint;
+                }
+            }
+        });
+        
+        if (countLimitPxP1 < proposedCutPx) {
+            proposedCutPx = countLimitPxP1;
+        }
 
-        // Find collision
-        const collision = cardPositions.find(pos => 
-            pos.top < proposedCutY_px && pos.bottom > proposedCutY_px
+        // 3. Collision Detection
+        const collisionP1 = cardPositions.find(pos => 
+            pos.top < proposedCutPx && pos.bottom > proposedCutPx
         );
 
-        if (collision) {
-            // If cutting through a card, stop just before it (with a 5mm buffer approx 15px)
-            const safeCutY_px = Math.max(0, collision.top - 10); 
-            const safeCutY_mm = safeCutY_px * ratio;
-            cutHeight = safeCutY_mm - currentSourcePdfY;
+        if (collisionP1) {
+            proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 15);
         }
+        
+        // Convert back to mm for slicing
+        const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
 
         // PAGE 1 DRAW
         pdf.addImage(bodyImgData, 'PNG', 0, page1MarginTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
         
-        // We must cover the area *below* the cut with a white box to "hide" the next page's content
-        // that might have spilled over into the margin area.
+        // Mask Bottom
         pdf.setFillColor(255, 255, 255);
-        pdf.rect(0, page1MarginTop + cutHeight, pdfWidth, pdfHeight - (page1MarginTop + cutHeight), 'F');
+        pdf.rect(0, page1MarginTop + cutHeightMm, pdfWidth, pdfHeight - (page1MarginTop + cutHeightMm), 'F');
 
-        currentSourcePdfY += cutHeight;
+        currentSourcePdfY += cutHeightMm;
 
         // --- Subsequent Pages ---
         while (currentSourcePdfY < bodyTotalPdfHeight - 1) { // tolerance
@@ -375,39 +401,68 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
              const pageTop = 10; 
              const pageAvailableHeight = pdfHeight - pageTop - 10;
              
-             // Calculate Safe Cut
-             let nextCutHeight = pageAvailableHeight;
-             const nextProposedCutY_mm = currentSourcePdfY + nextCutHeight;
-             const nextProposedCutY_px = nextProposedCutY_mm / ratio;
+             // 1. Standard Cut
+             const currentSubSourcePx = currentSourcePdfY / ratio;
+             const pageAvailableHeightPx = pageAvailableHeight / ratio;
+             let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
+
+             // 2. Max 4 Cards Constraint (SUBSEQUENT PAGES)
+             const visibleCardsSub = cardPositions.filter(p => p.top >= currentSubSourcePx - 5);
+             const columnsSub: Record<number, typeof cardPositions> = {};
              
+             visibleCardsSub.forEach(p => {
+                  const colKey = Math.round(p.left / 50) * 50;
+                  if (!columnsSub[colKey]) columnsSub[colKey] = [];
+                  columnsSub[colKey].push(p);
+             });
+             
+             let countLimitPxSub = Infinity;
+             Object.values(columnsSub).forEach(colCards => {
+                colCards.sort((a, b) => a.top - b.top);
+                // SE TEM MAIS DE 4 CARDS NESTA PÁGINA, CORTAR APÓS O 4º
+                if (colCards.length > 4) {
+                    const card4 = colCards[3];
+                    const card5 = colCards[4];
+                    const midpoint = (card4.bottom + card5.top) / 2;
+                    
+                    if (midpoint > currentSubSourcePx && midpoint < countLimitPxSub) {
+                        countLimitPxSub = midpoint;
+                    }
+                }
+             });
+             
+             if (countLimitPxSub < nextProposedCutPx) {
+                 nextProposedCutPx = countLimitPxSub;
+             }
+             
+             // 3. Collision Detection
              const nextCollision = cardPositions.find(pos => 
-                pos.top < nextProposedCutY_px && pos.bottom > nextProposedCutY_px
+                pos.top < nextProposedCutPx && pos.bottom > nextProposedCutPx
              );
              
              if (nextCollision) {
-                 const safeCutY_px = Math.max(0, nextCollision.top - 10);
-                 const safeCutY_mm = safeCutY_px * ratio;
-                 nextCutHeight = safeCutY_mm - currentSourcePdfY;
+                 nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 15);
              }
 
+             const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
+
              // Draw content shifted up
-             // Image starts at 'pageTop' visually, so we subtract currentSourcePdfY
              pdf.addImage(bodyImgData, 'PNG', 0, pageTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
              
-             // White-out the bottom margin area to hide spillover
-             if (pageTop + nextCutHeight < pdfHeight) {
+             // Mask Bottom
+             if (pageTop + nextCutHeightMm < pdfHeight) {
                  pdf.setFillColor(255, 255, 255);
-                 pdf.rect(0, pageTop + nextCutHeight, pdfWidth, pdfHeight - (pageTop + nextCutHeight), 'F');
+                 pdf.rect(0, pageTop + nextCutHeightMm, pdfWidth, pdfHeight - (pageTop + nextCutHeightMm), 'F');
              }
              
-             // White-out the top margin area (to hide previous content that was shifted up)
+             // Mask Top (hide previous content)
              pdf.setFillColor(255, 255, 255);
              pdf.rect(0, 0, pdfWidth, pageTop, 'F');
 
-             currentSourcePdfY += nextCutHeight;
+             currentSourcePdfY += nextCutHeightMm;
              
-             // Break loop if we are stuck (no progress)
-             if (nextCutHeight <= 0) break;
+             // Break if stuck
+             if (nextCutHeightMm <= 0.1) break;
         }
 
         window.open(pdf.output('bloburl'), '_blank');
