@@ -1,9 +1,7 @@
 
 import type { Schedule, ModuleSelection, Aula, Event, AulaEntry, EletivaEntry, AulaGroupDetail } from "../types";
 import { defaultAulas, defaultEvents, defaultEletivas } from "./initialData";
-
-// Permite o uso da biblioteca XLSX carregada via tag de script
-declare var XLSX: any;
+import * as XLSX from 'xlsx';
 
 const AULAS_KEY = 'afya-schedule-aulas';
 const EVENTS_KEY = 'afya-schedule-events';

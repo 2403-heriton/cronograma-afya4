@@ -11,8 +11,9 @@ import SpinnerIcon from './icons/SpinnerIcon';
 import CoffeeIcon from './icons/CoffeeIcon';
 import { stringToColor } from '../services/colorService';
 import { afyaLogoDataUrl } from './icons/AfyaLogo';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
-// Helper para exibir a observação em destaque
 const ObservacaoDisplay: React.FC<{ text: string }> = ({ text }) => {
   if (!text) return null;
   return (
@@ -25,7 +26,6 @@ const ObservacaoDisplay: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-// Card para horários livres / intervalos
 const FreeSlotCard: React.FC<{ aula?: Aula; isFullDay?: boolean }> = ({ aula, isFullDay }) => (
   <div className={`bg-green-50/5 border border-green-200/20 rounded-lg flex flex-col items-center justify-center text-green-200/80 shadow-sm free-slot-card ${isFullDay ? 'p-6 h-40 gap-2' : 'p-3 gap-2'}`}>
      <div className="flex items-center gap-2 opacity-80">
@@ -55,7 +55,6 @@ const FreeSlotCard: React.FC<{ aula?: Aula; isFullDay?: boolean }> = ({ aula, is
   </div>
 );
 
-// Card de aula
 const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
   const color = stringToColor(aula.disciplina);
   
@@ -67,7 +66,6 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
         '--card-color': color
       } as React.CSSProperties}
     >
-      {/* Header da Disciplina */}
       <div className="p-3 bg-slate-800/50 border-b border-slate-700 discipline-header">
         <div className="flex justify-between items-start gap-2 w-full">
            <h4 className="font-bold text-gray-100 text-base leading-tight">
@@ -81,8 +79,7 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
         </div>
       </div>
 
-      {/* Lista de Grupos - Renderizados como mini-cards internos */}
-      <div className="flex-grow p-3 space-y-3">
+      <div className="flex-grow p-3 space-y-3 sub-body">
         {aula.subSessions.map((sessao, idx) => {
             const isMultiGroup = sessao.grupo.includes(',');
             return (
@@ -116,7 +113,6 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
         })}
       </div>
 
-      {/* Observação Geral da Disciplina (se houver e não estiver coberta por grupos) */}
       {aula.observacao && (
         <div className="p-3 bg-slate-900/30 border-t border-slate-700 text-xs">
              <ObservacaoDisplay text={aula.observacao} />
@@ -126,7 +122,6 @@ const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
   );
 };
 
-// Card do dia
 const DiaCard: React.FC<{ diaDeAula: DiaDeAula }> = ({ diaDeAula }) => {
   return (
     <div className="bg-slate-800 rounded-xl shadow-lg flex flex-col h-full overflow-hidden border border-slate-700 dia-card">
@@ -153,7 +148,6 @@ const DiaCard: React.FC<{ diaDeAula: DiaDeAula }> = ({ diaDeAula }) => {
 const getGroupRangeSummary = (schedule: Schedule): string => {
     const allGroups = new Set<string>();
     
-    // 1. Extrair todos os grupos únicos do cronograma visível
     schedule.forEach(day => {
         day.aulas.forEach(aula => {
             if (aula.isFreeSlot) return;
@@ -172,35 +166,28 @@ const getGroupRangeSummary = (schedule: Schedule): string => {
     const groupsArray = Array.from(allGroups);
     if (groupsArray.length === 0) return "";
 
-    // 2. Separar em Numéricos e Alfabéticos
     const numericGroups = groupsArray.filter(g => !isNaN(Number(g)));
     const alphaGroups = groupsArray.filter(g => isNaN(Number(g)));
 
-    // 3. Ordenar cada lista
     numericGroups.sort((a, b) => Number(a) - Number(b));
     alphaGroups.sort((a, b) => a.localeCompare(b));
 
-    // 4. Função auxiliar para formatar o intervalo
     const formatRange = (list: string[]) => {
         if (list.length === 0) return "";
         if (list.length === 1) return `Grupo ${list[0]}`;
-        if (list.length <= 3) return `Grupos ${list.join(', ')}`; // Lista curta
-        return `Grupos de ${list[0]} a ${list[list.length - 1]}`; // Intervalo
+        if (list.length <= 3) return `Grupos ${list.join(', ')}`;
+        return `Grupos de ${list[0]} a ${list[list.length - 1]}`;
     };
 
     const numericSummary = formatRange(numericGroups);
     const alphaSummary = formatRange(alphaGroups);
 
-    // 5. Combinar os resultados
     if (numericSummary && alphaSummary) {
-        // Ex: "Grupos de A a E e Grupos de 1 a 20"
-        // A ordem pode ser ajustada. Aqui coloco Alfabético primeiro, depois Numérico.
         return `${alphaSummary} e ${numericSummary}`;
     }
 
     return numericSummary || alphaSummary;
 };
-
 
 interface ScheduleDisplayProps {
   schedule: Schedule | null;
@@ -216,32 +203,26 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
   
     setIsGeneratingPdf(true);
   
-    // --- 1. Prepare Temporary Containers ---
-    const tempContainer = document.createElement('div');
-    tempContainer.className = 'pdf-export-container';
-    // Force the browser to render it now by adding a 'capturing' class
-    // This class in CSS sets visibility: visible, even if z-index is negative
-    tempContainer.classList.add('capturing');
-    
-    // Configuração de largura A4 Paisagem otimizada
     const CAPTURE_WIDTH = 1280;
 
-    // 1a. Create Header Element
+    const tempContainer = document.createElement('div');
+    tempContainer.className = 'pdf-export-container';
+    tempContainer.classList.add('capturing'); 
+    
     const headerWrapper = document.createElement('div');
-    headerWrapper.style.backgroundColor = '#ffffff';
-    headerWrapper.style.padding = '20px 40px 0 40px';
+    headerWrapper.className = 'pdf-header-wrapper';
     headerWrapper.style.width = `${CAPTURE_WIDTH}px`;
 
     const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
 
     headerWrapper.innerHTML = `
-        <div class="pdf-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #CE0058; padding-bottom: 15px; margin-bottom: 10px;">
-            <div style="flex-shrink: 0;">
-                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain; display: block;" alt="Afya Logo" crossorigin="anonymous" />
+        <div class="pdf-header">
+            <div>
+                 <img src="${logoSrc}" alt="Afya Logo" crossorigin="anonymous" />
             </div>
-            <div style="text-align: right; font-family: sans-serif;">
-                <h2 style="color: #0057B8; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
-                <div style="color: #CE0058; font-size: 11px; line-height: 1.4; font-weight: 600;">
+            <div>
+                <h2 style="color: #0057B8 !important; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
+                <div style="color: #CE0058 !important; font-size: 11px; font-weight: 600;">
                     Coordenador do Curso: Prof. Kristhea Karyne <span style="margin:0 6px;">|</span> 
                     Coordenadora Adjunta: Prof. Roberya Viana
                 </div>
@@ -249,26 +230,22 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         </div>
     `;
     
-    // 1b. Create Title for Grid
     const groupSummary = schedule ? getGroupRangeSummary(schedule) : "";
     const fullTitle = groupSummary 
         ? `Semana Padrão 2026.1 - ${periodo} - ${groupSummary}`
         : `Semana Padrão 2026.1 - ${periodo}`;
     
     const gridTitleContainer = document.createElement('div');
-    gridTitleContainer.innerHTML = `<h2 class="pdf-title" style="text-align: center; font-size: 20px; font-weight: bold; color: #374151; margin: 15px 0;">${fullTitle}</h2>`;
+    gridTitleContainer.innerHTML = `<h2 class="pdf-title">${fullTitle}</h2>`;
     
-    // 1c. Clone Grid Content
     const contentClone = scheduleContent.cloneNode(true) as HTMLElement;
     contentClone.removeAttribute('id');
     const grid = contentClone.querySelector('.grid');
     if (grid) grid.className = 'pdf-export-grid';
     
-    // Assemble Body Capture Container (Title + Grid)
     const bodyWrapper = document.createElement('div');
-    bodyWrapper.id = 'pdf-body-wrapper'; // ID for DOM query during safe slicing
+    bodyWrapper.id = 'pdf-body-wrapper'; 
     bodyWrapper.style.backgroundColor = '#ffffff';
-    bodyWrapper.style.padding = '10px 40px 40px 40px';
     bodyWrapper.style.width = `${CAPTURE_WIDTH}px`;
     bodyWrapper.appendChild(gridTitleContainer);
     bodyWrapper.appendChild(contentClone);
@@ -277,35 +254,31 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     tempContainer.appendChild(bodyWrapper);
     document.body.appendChild(tempContainer);
 
-    // Use setTimeout to allow the browser to perform the layout paint before capturing
-    // This is crucial for production builds where CSS loading might be slightly deferred
-    await document.fonts.ready; // Wait for fonts
+    // Ensure fonts are ready
+    await document.fonts.ready;
     
+    // Increased Delay for Production Environment
     setTimeout(async () => {
       try {
-        const { jsPDF } = window.jspdf;
         
-        // Capture Header
-        const headerCanvas = await html2canvas(headerWrapper, {
-          scale: 2,
+        // Common capture options
+        const captureOptions = {
+          scale: 2, // High quality
           useCORS: true,
           backgroundColor: '#ffffff',
-          logging: false
-        });
+          logging: false,
+          windowWidth: 1920, // Force browser to emulate desktop
+          windowHeight: 1080 // Force browser to emulate desktop
+        };
+
+        const headerCanvas = await html2canvas(headerWrapper, captureOptions);
         const headerImgData = headerCanvas.toDataURL('image/png');
         const headerImgProps = new jsPDF().getImageProperties(headerImgData);
 
-        // Capture Body
-        const bodyCanvas = await html2canvas(bodyWrapper, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false
-        });
+        const bodyCanvas = await html2canvas(bodyWrapper, captureOptions);
         const bodyImgData = bodyCanvas.toDataURL('image/png');
         const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
         
-        // PDF Setup (A4 Landscape)
         const pdf = new jsPDF({
           orientation: 'landscape',
           unit: 'mm',
@@ -314,14 +287,12 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
 
         const pdfWidth = pdf.internal.pageSize.getWidth();
         const pdfHeight = pdf.internal.pageSize.getHeight();
-        const ratio = pdfWidth / bodyImgProps.width; // Scale ratio from canvas pixels to PDF mm
+        const ratio = pdfWidth / bodyImgProps.width; 
         
-        // Dimensions in PDF units (mm)
         const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
         const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
         
-        // Dimensions in Canvas units (pixels) - used for collision detection
-        // Scan the DOM to find all potential cut-points (cards)
+        // DOM Scanning for Safe Slicing
         const cards = Array.from(bodyWrapper.querySelectorAll('.aula-card, .free-slot-card'));
         const cardPositions = cards.map(card => {
             const rect = card.getBoundingClientRect();
@@ -334,22 +305,19 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
             };
         });
 
-        let currentSourcePdfY = 0; // Current Y position in the source image (in PDF mm equivalents)
+        let currentSourcePdfY = 0; 
 
         // --- PAGE 1 ---
-        
-        // Draw Header
         pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
         
         const page1MarginTop = headerPdfHeight + 5;
-        const page1AvailableHeight = pdfHeight - page1MarginTop - 10; // 10mm bottom margin
+        const page1AvailableHeight = pdfHeight - page1MarginTop - 10;
 
-        // 1. Calculate Safe Cut for Page 1 (Pixel Conversion)
         const currentSourcePx = currentSourcePdfY / ratio;
         const page1AvailableHeightPx = page1AvailableHeight / ratio;
         let proposedCutPx = currentSourcePx + page1AvailableHeightPx;
         
-        // 2. Max 4 Cards per Column Constraint (PAGE 1)
+        // Max 4 Cards Constraint (PAGE 1)
         const visibleCardsP1 = cardPositions.filter(p => p.top >= currentSourcePx - 5);
         const columnsP1: Record<number, typeof cardPositions> = {};
         
@@ -362,11 +330,9 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         let countLimitPxP1 = Infinity;
         Object.values(columnsP1).forEach(colCards => {
             colCards.sort((a, b) => a.top - b.top);
-            // SE TEM MAIS DE 4 CARDS, CORTAR APÓS O 4º
             if (colCards.length > 4) {
-                const card4 = colCards[3]; // index 3 is the 4th card
-                const card5 = colCards[4]; // index 4 is the 5th card
-                // Calculate midpoint for cleaner cut between card 4 and 5
+                const card4 = colCards[3]; 
+                const card5 = colCards[4]; 
                 const midpoint = (card4.bottom + card5.top) / 2;
                 
                 if (midpoint > currentSourcePx && midpoint < countLimitPxP1) {
@@ -379,41 +345,36 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
             proposedCutPx = countLimitPxP1;
         }
 
-        // 3. Collision Detection
+        // Collision Detection (Aggressive Buffer)
         const collisionP1 = cardPositions.find(pos => 
             pos.top < proposedCutPx && pos.bottom > proposedCutPx
         );
 
         if (collisionP1) {
-            // Aumentado o buffer de segurança para 30px para evitar cortes em bordas e sombras
-            proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 30);
+            // SAFETY BUFFER INCREASED TO 60PX
+            proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 60);
         }
         
-        // Convert back to mm for slicing
         const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
 
-        // PAGE 1 DRAW
         pdf.addImage(bodyImgData, 'PNG', 0, page1MarginTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
         
-        // Mask Bottom
         pdf.setFillColor(255, 255, 255);
         pdf.rect(0, page1MarginTop + cutHeightMm, pdfWidth, pdfHeight - (page1MarginTop + cutHeightMm), 'F');
 
         currentSourcePdfY += cutHeightMm;
 
         // --- Subsequent Pages ---
-        while (currentSourcePdfY < bodyTotalPdfHeight - 1) { // tolerance
+        while (currentSourcePdfY < bodyTotalPdfHeight - 1) { 
              pdf.addPage();
              
              const pageTop = 10; 
              const pageAvailableHeight = pdfHeight - pageTop - 10;
              
-             // 1. Standard Cut
              const currentSubSourcePx = currentSourcePdfY / ratio;
              const pageAvailableHeightPx = pageAvailableHeight / ratio;
              let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
 
-             // 2. Max 4 Cards Constraint (SUBSEQUENT PAGES)
              const visibleCardsSub = cardPositions.filter(p => p.top >= currentSubSourcePx - 5);
              const columnsSub: Record<number, typeof cardPositions> = {};
              
@@ -426,7 +387,6 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
              let countLimitPxSub = Infinity;
              Object.values(columnsSub).forEach(colCards => {
                 colCards.sort((a, b) => a.top - b.top);
-                // SE TEM MAIS DE 4 CARDS NESTA PÁGINA, CORTAR APÓS O 4º
                 if (colCards.length > 4) {
                     const card4 = colCards[3];
                     const card5 = colCards[4];
@@ -442,34 +402,29 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
                  nextProposedCutPx = countLimitPxSub;
              }
              
-             // 3. Collision Detection
              const nextCollision = cardPositions.find(pos => 
                 pos.top < nextProposedCutPx && pos.bottom > nextProposedCutPx
              );
              
              if (nextCollision) {
-                 // Aumentado o buffer de segurança para 30px
-                 nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 30);
+                 // SAFETY BUFFER INCREASED TO 60PX
+                 nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 60);
              }
 
              const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
 
-             // Draw content shifted up
              pdf.addImage(bodyImgData, 'PNG', 0, pageTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
              
-             // Mask Bottom
              if (pageTop + nextCutHeightMm < pdfHeight) {
                  pdf.setFillColor(255, 255, 255);
                  pdf.rect(0, pageTop + nextCutHeightMm, pdfWidth, pdfHeight - (pageTop + nextCutHeightMm), 'F');
              }
              
-             // Mask Top (hide previous content)
              pdf.setFillColor(255, 255, 255);
              pdf.rect(0, 0, pdfWidth, pageTop, 'F');
 
              currentSourcePdfY += nextCutHeightMm;
              
-             // Break if stuck
              if (nextCutHeightMm <= 0.1) break;
         }
 
@@ -482,7 +437,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         document.body.removeChild(tempContainer);
         setIsGeneratingPdf(false);
       }
-    }, 1000); // 1000ms delay ensures CSS is fully applied in production environment
+    }, 2000); // 2 Seconds Delay ensures CSS lock-in
   };
   
   const hasClasses = schedule && schedule.length > 0;
