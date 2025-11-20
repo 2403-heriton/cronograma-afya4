@@ -12,8 +12,6 @@ import SpinnerIcon from './icons/SpinnerIcon';
 import ExternalLinkIcon from './icons/ExternalLinkIcon';
 import SearchIcon from './icons/SearchIcon';
 
-// FIX: Removed redeclared global types for jspdf and html2canvas. These are now defined in types.ts.
-
 const EventInfo: React.FC<{ icon: React.ReactNode; label: string; value: string }> = ({ icon, label, value }) => (
   <div className="flex items-start gap-2 text-sm text-gray-400">
     <span className="text-afya-pink flex-shrink-0 w-3 h-3 mt-0.5">{icon}</span>
@@ -398,6 +396,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              if (nextCutHeightMm <= 0.1) break;
         }
 
+        // OPEN PDF IN NEW TAB (VISUALIZAR)
         window.open(pdf.output('bloburl'), '_blank');
 
       } catch (e) {

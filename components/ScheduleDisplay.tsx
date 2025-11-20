@@ -193,8 +193,6 @@ const getGroupRangeSummary = (schedule: Schedule): string => {
 
     // 5. Combinar os resultados
     if (numericSummary && alphaSummary) {
-        // Ex: "Grupos de A a E e Grupos de 1 a 20"
-        // A ordem pode ser ajustada. Aqui coloco Alfabético primeiro, depois Numérico.
         return `${alphaSummary} e ${numericSummary}`;
     }
 
@@ -220,7 +218,6 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     const tempContainer = document.createElement('div');
     tempContainer.className = 'pdf-export-container';
     // Force the browser to render it now by adding a 'capturing' class
-    // This class in CSS sets visibility: visible, even if z-index is negative
     tempContainer.classList.add('capturing');
     
     // Configuração de largura A4 Paisagem otimizada
@@ -232,6 +229,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     headerWrapper.style.padding = '20px 40px 0 40px';
     headerWrapper.style.width = `${CAPTURE_WIDTH}px`;
 
+    // Use a direct URL for the logo to ensure it loads in the canvas
     const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
 
     headerWrapper.innerHTML = `
@@ -266,7 +264,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     
     // Assemble Body Capture Container (Title + Grid)
     const bodyWrapper = document.createElement('div');
-    bodyWrapper.id = 'pdf-body-wrapper'; // ID for DOM query during safe slicing
+    bodyWrapper.id = 'pdf-body-wrapper';
     bodyWrapper.style.backgroundColor = '#ffffff';
     bodyWrapper.style.padding = '10px 40px 40px 40px';
     bodyWrapper.style.width = `${CAPTURE_WIDTH}px`;
@@ -278,8 +276,8 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     document.body.appendChild(tempContainer);
 
     // Use setTimeout to allow the browser to perform the layout paint before capturing
-    // This is crucial for production builds where CSS loading might be slightly deferred
-    await document.fonts.ready; // Wait for fonts
+    // increased to 2000ms to ensure fonts and styles are ready
+    await document.fonts.ready;
     
     setTimeout(async () => {
       try {
@@ -321,7 +319,6 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
         
         // Dimensions in Canvas units (pixels) - used for collision detection
-        // Scan the DOM to find all potential cut-points (cards)
         const cards = Array.from(bodyWrapper.querySelectorAll('.aula-card, .free-slot-card'));
         const cardPositions = cards.map(card => {
             const rect = card.getBoundingClientRect();
@@ -473,6 +470,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
              if (nextCutHeightMm <= 0.1) break;
         }
 
+        // OPEN PDF IN NEW TAB (VISUALIZAR)
         window.open(pdf.output('bloburl'), '_blank');
 
       } catch (e) {
