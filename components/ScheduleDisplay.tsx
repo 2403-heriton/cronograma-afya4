@@ -10,6 +10,7 @@ import ExternalLinkIcon from './icons/ExternalLinkIcon';
 import SpinnerIcon from './icons/SpinnerIcon';
 import CoffeeIcon from './icons/CoffeeIcon';
 import { stringToColor } from '../services/colorService';
+import { afyaLogoDataUrl } from './icons/AfyaLogo';
 
 // Helper para exibir a observação em destaque
 const ObservacaoDisplay: React.FC<{ text: string }> = ({ text }) => {
@@ -226,12 +227,13 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
     headerWrapper.style.padding = '20px 40px 0 40px';
     headerWrapper.style.width = `${CAPTURE_WIDTH}px`;
 
-    const logoSrc = "https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png";
+    // Use Base64 Logo to prevent CORS issues
+    const logoSrc = afyaLogoDataUrl;
 
     headerWrapper.innerHTML = `
         <div class="pdf-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #CE0058; padding-bottom: 15px; margin-bottom: 10px;">
             <div style="flex-shrink: 0;">
-                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain; display: block;" alt="Afya Logo" crossorigin="anonymous" />
+                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain; display: block;" alt="Afya Logo" />
             </div>
             <div style="text-align: right; font-family: sans-serif;">
                 <h2 style="color: #0057B8; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
@@ -279,7 +281,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         
         const canvasOptions = {
           scale: 2,
-          useCORS: true,
+          useCORS: true, // Still kept true, but Base64 bypasses network
           allowTaint: true,
           backgroundColor: '#ffffff',
           logging: false,
