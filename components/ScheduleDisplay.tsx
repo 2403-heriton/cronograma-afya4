@@ -385,8 +385,8 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         );
 
         if (collisionP1) {
-            // Aumentado o buffer de segurança para 30px para evitar cortes em bordas e sombras
-            proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 30);
+            // Aumentado o buffer de segurança para 60px para evitar cortes em bordas e sombras
+            proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 60);
         }
         
         // Convert back to mm for slicing
@@ -448,8 +448,8 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
              );
              
              if (nextCollision) {
-                 // Aumentado o buffer de segurança para 30px
-                 nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 30);
+                 // Aumentado o buffer de segurança para 60px
+                 nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 60);
              }
 
              const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
@@ -482,7 +482,7 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         document.body.removeChild(tempContainer);
         setIsGeneratingPdf(false);
       }
-    }, 1000); // 1000ms delay ensures CSS is fully applied in production environment
+    }, 2000); // 2000ms delay ensures CSS is fully applied in production environment
   };
   
   const hasClasses = schedule && schedule.length > 0;

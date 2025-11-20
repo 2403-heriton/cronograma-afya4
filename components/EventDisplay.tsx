@@ -316,7 +316,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         );
         
         if (collisionP1) {
-             proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 25); // increased safety
+             proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 60); // increased safety
         }
         
         const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
@@ -376,7 +376,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              );
              
              if (nextCollision) {
-                  nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 25);
+                  nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 60);
              }
              
              const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
@@ -407,7 +407,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         document.body.removeChild(tempContainer);
         setIsGeneratingPdf(false);
       }
-    }, 500); // 500ms Delay
+    }, 2000); // 2000ms Delay
   };
 
   if (!events || events.length === 0) {
