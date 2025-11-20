@@ -95,19 +95,16 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
     
     let result = events;
 
-    // 1. Filtro por Escopo (Período vs Geral)
     if (selectedScope === 'specific') {
         result = result.filter(event => normalizePeriodo(event.periodo) !== 'geral');
     } else if (selectedScope === 'general') {
         result = result.filter(event => normalizePeriodo(event.periodo) === 'geral');
     }
 
-    // 2. Filtro por Tipo
     if (selectedType !== 'Todos') {
       result = result.filter(event => event.tipo === selectedType);
     }
 
-    // 3. Filtro por Texto (Busca)
     if (searchTerm.trim() !== '') {
         const term = searchTerm.toLowerCase();
         result = result.filter(event => 
@@ -150,13 +147,11 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
   
     setIsGeneratingPdf(true);
   
-    // --- 1. Prepare Temporary Container ---
     const tempContainer = document.createElement('div');
-    tempContainer.className = 'pdf-export-container'; // Default width is 1280px (landscape)
+    tempContainer.className = 'pdf-export-container'; 
     tempContainer.classList.add('capturing');
     const CAPTURE_WIDTH = 1280; 
     
-    // 1a. Create Header Element (Identical to Schedule Display)
     const headerWrapper = document.createElement('div');
     headerWrapper.style.backgroundColor = '#ffffff';
     headerWrapper.style.padding = '20px 40px 0 40px';
@@ -179,11 +174,9 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         </div>
     `;
 
-    // 1b. Create Title
     const gridTitleContainer = document.createElement('div');
     gridTitleContainer.innerHTML = `<h2 class="pdf-title" style="text-align: center; font-size: 20px; font-weight: bold; color: #374151; margin: 15px 0;">Calendário de Eventos - ${periodo}</h2>`;
 
-    // 1c. Clone Body Content
     const contentClone = eventsContent.cloneNode(true) as HTMLElement;
     contentClone.removeAttribute('id');
     const monthGroups = contentClone.querySelectorAll('.event-month-group-pdf');
@@ -194,7 +187,6 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         }
     });
     
-    // Body Wrapper
     const bodyWrapper = document.createElement('div');
     bodyWrapper.id = 'pdf-events-body-wrapper';
     bodyWrapper.style.backgroundColor = '#ffffff';
@@ -219,20 +211,17 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
             allowTaint: true,
             backgroundColor: '#ffffff',
             logging: false,
-            windowWidth: 1600 // Force desktop rendering logic even on mobile
+            windowWidth: 1600 
         };
 
-        // Capture Header
         const headerCanvas = await html2canvas(headerWrapper, canvasOptions);
         const headerImgData = headerCanvas.toDataURL('image/png');
         const headerImgProps = new jsPDF().getImageProperties(headerImgData);
         
-        // Capture Body
         const bodyCanvas = await html2canvas(bodyWrapper, canvasOptions);
         const bodyImgData = bodyCanvas.toDataURL('image/png');
         const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
 
-        // A4 Landscape
         const pdf = new jsPDF({
           orientation: 'landscape',
           unit: 'mm',
@@ -246,7 +235,6 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
         const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
 
-        // Scan DOM for Safe Slicing (Cards AND Month Headers)
         const elementsToScan = Array.from(bodyWrapper.querySelectorAll('.event-card-pdf, .event-month-group-pdf h3'));
         
         const elementPositions = elementsToScan.map(el => {
@@ -267,7 +255,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
         
         const page1MarginTop = headerPdfHeight + 5;
-        const page1AvailableHeight = pdfHeight - page1MarginTop - 10; // 10mm bottom margin
+        const page1AvailableHeight = pdfHeight - page1MarginTop - 10; 
         
         const currentSourcePx = currentSourcePdfY / ratio;
         const page1AvailableHeightPx = page1AvailableHeight / ratio;
@@ -276,12 +264,10 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         // --- LOGIC: MAX 3 CARDS PER COLUMN PER PAGE (Landscape) ---
         const visibleElementsP1 = elementPositions.filter(p => p.top >= currentSourcePx - 5);
         
-        // Group only cards by column
         const cardsP1 = visibleElementsP1.filter(p => p.isCard);
         const columnsP1: Record<number, typeof elementPositions> = {};
         
         cardsP1.forEach(p => {
-             // Approximate column grouping (3 columns in 1280px ~ 426px width)
              const colKey = Math.round(p.left / 420) * 420; 
              if (!columnsP1[colKey]) columnsP1[colKey] = [];
              columnsP1[colKey].push(p);
@@ -291,10 +277,9 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         
         Object.values(columnsP1).forEach(colCards => {
             colCards.sort((a, b) => a.top - b.top);
-            // Max 3 Cards vertically for Landscape (less vertical space)
             if (colCards.length > 3) {
-                const card3 = colCards[2]; // index 2 is 3rd card
-                const card4 = colCards[3]; // index 3 is 4th card
+                const card3 = colCards[2]; 
+                const card4 = colCards[3]; 
                 const midpoint = (card3.bottom + card4.top) / 2;
                 
                 if (midpoint > currentSourcePx && midpoint < countLimitPxP1) {
@@ -313,7 +298,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         );
         
         if (collisionP1) {
-             proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 60); // increased safety
+             proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 60); 
         }
         
         const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
@@ -337,7 +322,6 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              const pageAvailableHeightPx = pageAvailableHeight / ratio;
              let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
              
-             // --- LOGIC: MAX 3 CARDS PER COLUMN PER PAGE (SUBSEQUENT) ---
              const visibleElementsSub = elementPositions.filter(p => p.top >= currentSubSourcePx - 5);
              const cardsSub = visibleElementsSub.filter(p => p.isCard);
              const columnsSub: Record<number, typeof elementPositions> = {};
@@ -367,7 +351,6 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
                  nextProposedCutPx = countLimitPxSub;
              }
 
-             // --- COLLISION DETECTION SUB ---
              const nextCollision = elementPositions.find(pos => 
                 pos.top < nextProposedCutPx && pos.bottom > nextProposedCutPx
              );
@@ -380,13 +363,11 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              
              pdf.addImage(bodyImgData, 'PNG', 0, pageTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
              
-             // Mask Bottom
              if (pageTop + nextCutHeightMm < pdfHeight) {
                   pdf.setFillColor(255, 255, 255);
                   pdf.rect(0, pageTop + nextCutHeightMm, pdfWidth, pdfHeight - (pageTop + nextCutHeightMm), 'F');
              }
              
-             // Mask Top
              pdf.setFillColor(255, 255, 255);
              pdf.rect(0, 0, pdfWidth, pageTop, 'F');
              
@@ -395,7 +376,6 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              if (nextCutHeightMm <= 0.1) break;
         }
 
-        // TENTAR VISUALIZAR (FALLBACK PARA DOWNLOAD SE BLOQUEADO)
         const pdfBlobUrl = pdf.output('bloburl');
         const newWindow = window.open(pdfBlobUrl, '_blank');
 
@@ -412,7 +392,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         document.body.removeChild(tempContainer);
         setIsGeneratingPdf(false);
       }
-    }, 2000); // 2000ms Delay
+    }, 2000); 
   };
 
   if (!events || events.length === 0) {
