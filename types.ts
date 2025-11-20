@@ -69,3 +69,16 @@ export interface Event {
   modulo: string;
   grupo: string;
 }
+
+// FIX: Add global type declarations for jspdf and html2canvas to avoid redeclaration errors.
+declare global {
+  interface Window {
+    jspdf: {
+      jsPDF: new (options?: any) => any;
+    };
+  }
+  const html2canvas: (
+    element: HTMLElement,
+    options?: any
+  ) => Promise<HTMLCanvasElement>;
+}
