@@ -283,23 +283,22 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
       try {
         const { jsPDF } = window.jspdf;
         
-        // Capture Header
-        const headerCanvas = await html2canvas(headerWrapper, {
+        const canvasOptions = {
           scale: 2,
           useCORS: true,
+          allowTaint: true, // Permite imagens de origens diferentes
           backgroundColor: '#ffffff',
-          logging: false
-        });
+          logging: false,
+          windowWidth: 1600 // Força renderização como desktop para evitar layout mobile
+        };
+
+        // Capture Header
+        const headerCanvas = await html2canvas(headerWrapper, canvasOptions);
         const headerImgData = headerCanvas.toDataURL('image/png');
         const headerImgProps = new jsPDF().getImageProperties(headerImgData);
 
         // Capture Body
-        const bodyCanvas = await html2canvas(bodyWrapper, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false
-        });
+        const bodyCanvas = await html2canvas(bodyWrapper, canvasOptions);
         const bodyImgData = bodyCanvas.toDataURL('image/png');
         const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
         
@@ -470,8 +469,16 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
              if (nextCutHeightMm <= 0.1) break;
         }
 
-        // OPEN PDF IN NEW TAB (VISUALIZAR)
-        window.open(pdf.output('bloburl'), '_blank');
+        // TENTAR VISUALIZAR (FALLBACK PARA DOWNLOAD SE BLOQUEADO)
+        const pdfBlobUrl = pdf.output('bloburl');
+        const newWindow = window.open(pdfBlobUrl, '_blank');
+        
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+            // Se o popup foi bloqueado, faz o download e avisa
+            console.warn("Popup bloqueado. Iniciando download automático.");
+            pdf.save(`Cronograma_${periodo}.pdf`);
+            alert("O PDF foi baixado automaticamente porque a visualização em nova aba foi bloqueada pelo navegador.");
+        }
 
       } catch (e) {
         console.error('Erro ao gerar o PDF:', e);

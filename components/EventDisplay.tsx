@@ -213,23 +213,22 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
       try {
         const { jsPDF } = window.jspdf;
         
+        const canvasOptions = {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            windowWidth: 1600 // Force desktop rendering logic even on mobile
+        };
+
         // Capture Header
-        const headerCanvas = await html2canvas(headerWrapper, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false
-        });
+        const headerCanvas = await html2canvas(headerWrapper, canvasOptions);
         const headerImgData = headerCanvas.toDataURL('image/png');
         const headerImgProps = new jsPDF().getImageProperties(headerImgData);
         
         // Capture Body
-        const bodyCanvas = await html2canvas(bodyWrapper, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false
-        });
+        const bodyCanvas = await html2canvas(bodyWrapper, canvasOptions);
         const bodyImgData = bodyCanvas.toDataURL('image/png');
         const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
 
@@ -396,8 +395,15 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              if (nextCutHeightMm <= 0.1) break;
         }
 
-        // OPEN PDF IN NEW TAB (VISUALIZAR)
-        window.open(pdf.output('bloburl'), '_blank');
+        // TENTAR VISUALIZAR (FALLBACK PARA DOWNLOAD SE BLOQUEADO)
+        const pdfBlobUrl = pdf.output('bloburl');
+        const newWindow = window.open(pdfBlobUrl, '_blank');
+
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+            console.warn("Popup bloqueado. Iniciando download automático.");
+            pdf.save(`Eventos_${periodo}.pdf`);
+            alert("O PDF foi baixado automaticamente porque a visualização em nova aba foi bloqueada pelo navegador.");
+        }
 
       } catch (e) {
         console.error('Erro ao gerar o PDF:', e);
