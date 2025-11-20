@@ -64,7 +64,7 @@
         display: block !important;
       }
       
-      /* Portrait Mode Override */
+      /* Portrait Mode Override (Not used for events anymore, kept for potential future use) */
       .pdf-export-container.portrait {
          width: 900px !important; /* Reduced width for A4 Portrait readability */
       }
@@ -314,16 +314,12 @@
          page-break-after: avoid;
       }
       
+      /* Default Landscape Events Grid (3 Columns) */
       .pdf-export-event-grid {
         display: grid !important;
         grid-template-columns: repeat(3, 1fr) !important;
         gap: 1.2rem !important;
         width: 100%;
-      }
-      
-      /* Portrait Mode Grid Adjustment */
-      .pdf-export-container.portrait .pdf-export-event-grid {
-         grid-template-columns: repeat(2, 1fr) !important;
       }
 
       .pdf-export-container .event-card-pdf {

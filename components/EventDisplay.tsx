@@ -154,9 +154,9 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
   
     // --- 1. Prepare Temporary Container ---
     const tempContainer = document.createElement('div');
-    tempContainer.className = 'pdf-export-container portrait'; // Class 'portrait' triggers 900px width in CSS
+    tempContainer.className = 'pdf-export-container'; // Default width is 1280px (landscape)
     tempContainer.classList.add('capturing');
-    const CAPTURE_WIDTH = 900; // Reduced width for Portrait A4 readability
+    const CAPTURE_WIDTH = 1280; 
     
     // 1a. Create Header Element (Identical to Schedule Display)
     const headerWrapper = document.createElement('div');
@@ -235,9 +235,9 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         const bodyImgData = bodyCanvas.toDataURL('image/png');
         const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
 
-        // A4 Portrait
+        // A4 Landscape
         const pdf = new jsPDF({
-          orientation: 'portrait',
+          orientation: 'landscape',
           unit: 'mm',
           format: 'a4',
         });
@@ -276,7 +276,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         const page1AvailableHeightPx = page1AvailableHeight / ratio;
         let proposedCutPx = currentSourcePx + page1AvailableHeightPx;
         
-        // --- LOGIC: MAX 4 CARDS PER COLUMN PER PAGE (Portrait) ---
+        // --- LOGIC: MAX 3 CARDS PER COLUMN PER PAGE (Landscape) ---
         const visibleElementsP1 = elementPositions.filter(p => p.top >= currentSourcePx - 5);
         
         // Group only cards by column
@@ -284,8 +284,8 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         const columnsP1: Record<number, typeof elementPositions> = {};
         
         cardsP1.forEach(p => {
-             // Approximate column grouping (2 columns in 900px ~ 450px width)
-             const colKey = Math.round(p.left / 400) * 400; 
+             // Approximate column grouping (3 columns in 1280px ~ 426px width)
+             const colKey = Math.round(p.left / 420) * 420; 
              if (!columnsP1[colKey]) columnsP1[colKey] = [];
              columnsP1[colKey].push(p);
         });
@@ -294,11 +294,11 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         
         Object.values(columnsP1).forEach(colCards => {
             colCards.sort((a, b) => a.top - b.top);
-            // Max 4 Cards vertically for Portrait
-            if (colCards.length > 4) {
+            // Max 3 Cards vertically for Landscape (less vertical space)
+            if (colCards.length > 3) {
+                const card3 = colCards[2]; // index 2 is 3rd card
                 const card4 = colCards[3]; // index 3 is 4th card
-                const card5 = colCards[4]; // index 4 is 5th card
-                const midpoint = (card4.bottom + card5.top) / 2;
+                const midpoint = (card3.bottom + card4.top) / 2;
                 
                 if (midpoint > currentSourcePx && midpoint < countLimitPxP1) {
                     countLimitPxP1 = midpoint;
@@ -316,7 +316,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
         );
         
         if (collisionP1) {
-             proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 15);
+             proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 25); // increased safety
         }
         
         const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
@@ -340,13 +340,13 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              const pageAvailableHeightPx = pageAvailableHeight / ratio;
              let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
              
-             // --- LOGIC: MAX 4 CARDS PER COLUMN PER PAGE (SUBSEQUENT) ---
+             // --- LOGIC: MAX 3 CARDS PER COLUMN PER PAGE (SUBSEQUENT) ---
              const visibleElementsSub = elementPositions.filter(p => p.top >= currentSubSourcePx - 5);
              const cardsSub = visibleElementsSub.filter(p => p.isCard);
              const columnsSub: Record<number, typeof elementPositions> = {};
              
              cardsSub.forEach(p => {
-                 const colKey = Math.round(p.left / 400) * 400;
+                 const colKey = Math.round(p.left / 420) * 420;
                  if (!columnsSub[colKey]) columnsSub[colKey] = [];
                  columnsSub[colKey].push(p);
              });
@@ -355,10 +355,10 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              
              Object.values(columnsSub).forEach(colCards => {
                  colCards.sort((a, b) => a.top - b.top);
-                 if (colCards.length > 4) {
+                 if (colCards.length > 3) {
+                     const card3 = colCards[2];
                      const card4 = colCards[3];
-                     const card5 = colCards[4];
-                     const midpoint = (card4.bottom + card5.top) / 2;
+                     const midpoint = (card3.bottom + card4.top) / 2;
                      
                      if (midpoint > currentSubSourcePx && midpoint < countLimitPxSub) {
                          countLimitPxSub = midpoint;
@@ -376,7 +376,7 @@ const EventDisplay: React.FC<EventDisplayProps> = ({ events, periodo }) => {
              );
              
              if (nextCollision) {
-                  nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 15);
+                  nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 25);
              }
              
              const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
