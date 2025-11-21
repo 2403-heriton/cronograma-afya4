@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useEffect, lazy, Suspense } from 'react';
-import { fetchSchedule, getUniqueModulesForPeriod, fetchEvents, initializeAndLoadData, getUniquePeriods, getUniqueGroupsForModule, getUniqueEletivas, getUniqueGroupsForPeriod } from './services/scheduleService';
-import type { Schedule, ModuleSelection, Event, AulaEntry, EletivaEntry } from './types';
+import { fetchSchedule, fetchEvents, initializeAndLoadData, getUniquePeriods } from './services/scheduleService';
+import type { Schedule, Event, AulaEntry, EletivaEntry } from './types';
 import ScheduleForm from './components/ScheduleForm';
 import SpinnerIcon from './components/icons/SpinnerIcon';
 import CalendarIcon from './components/icons/CalendarIcon';
@@ -21,29 +21,16 @@ interface UploadData {
 }
 
 const LAST_SEARCH_PERIODO_KEY = 'afya-last-periodo';
-const LAST_SEARCH_ELETIVAS_KEY = 'afya-last-eletivas';
-const LAST_SEARCH_GROUPS_KEY = 'afya-last-groups';
-
 
 const App: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState<boolean>(true);
   const [allAulas, setAllAulas] = useState<AulaEntry[]>([]);
   const [allEvents, setAllEvents] = useState<Event[]>([]);
+  // allEletivas mantido para integridade do DataUploader, embora não usado na busca simplificada
   const [allEletivas, setAllEletivas] = useState<EletivaEntry[]>([]);
 
   const [availablePeriods, setAvailablePeriods] = useState<string[]>([]);
   const [periodo, setPeriodo] = useState<string>('');
-  
-  // Estados para Grupos (Multi-Select)
-  const [availableGroups, setAvailableGroups] = useState<string[]>([]);
-  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
-  const [groupToAdd, setGroupToAdd] = useState<string>('');
-
-  const [availableEletivas, setAvailableEletivas] = useState<string[]>([]);
-  
-  // Estado para a seleção de eletivas
-  const [selectedEletivas, setSelectedEletivas] = useState<string[]>([]);
-  const [eletivaToAdd, setEletivaToAdd] = useState<string>('');
   
   const [schedule, setSchedule] = useState<Schedule | null>(null);
   const [events, setEvents] = useState<Event[] | null>([]);
@@ -70,9 +57,6 @@ const App: React.FC = () => {
             setAllEvents(events);
             setAllEletivas(eletivas);
             
-            const uniqueEletivas = getUniqueEletivas(eletivas);
-            setAvailableEletivas(uniqueEletivas);
-
             if (aulas.length > 0) {
                 const periods = getUniquePeriods(aulas);
                 setAvailablePeriods(periods);
@@ -81,43 +65,9 @@ const App: React.FC = () => {
                 const savedPeriodo = localStorage.getItem(LAST_SEARCH_PERIODO_KEY);
                 if (savedPeriodo && periods.includes(savedPeriodo)) {
                     setPeriodo(savedPeriodo);
-                    // Recarrega os grupos disponíveis para o período salvo
-                    const groups = getUniqueGroupsForPeriod(savedPeriodo, aulas);
-                    setAvailableGroups(groups);
-
-                    // Tenta carregar os grupos selecionados anteriormente
-                    const savedGroupsJSON = localStorage.getItem(LAST_SEARCH_GROUPS_KEY);
-                    if (savedGroupsJSON) {
-                         try {
-                             const savedGroups = JSON.parse(savedGroupsJSON);
-                             if (Array.isArray(savedGroups) && savedGroups.every(item => typeof item === 'string')) {
-                                 setSelectedGroups(savedGroups);
-                             }
-                         } catch(e) {
-                             console.error("Falha ao carregar grupos salvos", e);
-                         }
-                    }
-
                 } else if (periods.length > 0) {
                     setPeriodo(periods[0]);
-                    const groups = getUniqueGroupsForPeriod(periods[0], aulas);
-                    setAvailableGroups(groups);
                 }
-                
-                const savedEletivasJSON = localStorage.getItem(LAST_SEARCH_ELETIVAS_KEY);
-                if (savedEletivasJSON) {
-                    try {
-                        const savedEletivas = JSON.parse(savedEletivasJSON);
-                        // Verifica se é um array de strings
-                        if (Array.isArray(savedEletivas) && savedEletivas.every(item => typeof item === 'string')) {
-                             setSelectedEletivas(savedEletivas);
-                        }
-                    } catch (e) {
-                        console.error("Falha ao analisar eletivas salvas do localStorage", e);
-                        setSelectedEletivas([]);
-                    }
-                }
-
             } else {
                  setError("Nenhum dado de aulas encontrado. Por favor, use o modo de administrador para carregar uma planilha.");
             }
@@ -133,39 +83,8 @@ const App: React.FC = () => {
     loadInitialData();
   }, []);
 
-  // Funções para manipular a seleção de eletivas
-  const addEletiva = () => {
-    if (eletivaToAdd && !selectedEletivas.includes(eletivaToAdd)) {
-      setSelectedEletivas(prev => [...prev, eletivaToAdd]);
-      setEletivaToAdd('');
-    }
-  };
-
-  const removeEletiva = (disciplinaToRemove: string) => {
-    setSelectedEletivas(prev => prev.filter(disciplina => disciplina !== disciplinaToRemove));
-  };
-
-  // Funções para manipular a seleção de Grupos
-  const addGroup = () => {
-     if (groupToAdd && !selectedGroups.includes(groupToAdd)) {
-         setSelectedGroups(prev => [...prev, groupToAdd]);
-         setGroupToAdd('');
-     }
-  };
-
-  const removeGroup = (groupToRemove: string) => {
-      setSelectedGroups(prev => prev.filter(g => g !== groupToRemove));
-  };
-
-
   const handlePeriodoChange = (newPeriodo: string) => {
     setPeriodo(newPeriodo);
-    
-    // Atualiza grupos disponíveis
-    const groups = getUniqueGroupsForPeriod(newPeriodo, allAulas);
-    setAvailableGroups(groups);
-    setSelectedGroups([]); // Reseta seleção de grupos ao mudar de período
-    
     setSchedule(null);
     setEvents(null);
     setSearched(false);
@@ -182,21 +101,14 @@ const App: React.FC = () => {
     setView('schedule');
 
     try {
-      // Agora passamos os grupos selecionados e as eletivas.
-      const eletivasPayload = selectedEletivas.filter(Boolean);
-      const groupsPayload = selectedGroups.filter(Boolean);
-      
-      const scheduleResult = fetchSchedule(periodo, [], groupsPayload, eletivasPayload, allAulas, allEletivas);
-      
-      const eventsResult = fetchEvents(periodo, [], allEvents);
+      const scheduleResult = fetchSchedule(periodo, allAulas);
+      const eventsResult = fetchEvents(periodo, allEvents);
 
       setSchedule(scheduleResult);
       setEvents(eventsResult);
 
       // Salvar busca no localStorage
       localStorage.setItem(LAST_SEARCH_PERIODO_KEY, periodo);
-      localStorage.setItem(LAST_SEARCH_ELETIVAS_KEY, JSON.stringify(selectedEletivas));
-      localStorage.setItem(LAST_SEARCH_GROUPS_KEY, JSON.stringify(selectedGroups));
       
     } catch (err) {
       console.error("Erro durante a busca:", err);
@@ -205,26 +117,24 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [periodo, selectedEletivas, selectedGroups, allAulas, allEletivas, allEvents]);
+  }, [periodo, allAulas, allEvents]);
   
   const handleUploadSuccess = (data: UploadData) => {
     setAllAulas(data.aulasData);
     setAllEvents(data.eventsData);
     setAllEletivas(data.eletivasData);
     // Força a recarga dos dados e re-renderização
-    setPeriodo(''); 
+    setPeriodo(''); // Reseta para acionar o useEffect de período
     setTimeout(() => {
         const periods = getUniquePeriods(data.aulasData);
         setAvailablePeriods(periods);
         if (periods.length > 0) {
             setPeriodo(periods[0]);
-            setAvailableGroups(getUniqueGroupsForPeriod(periods[0], data.aulasData));
         }
     }, 0);
     setSchedule(null);
     setEvents(null);
     setSearched(false);
-    setSelectedGroups([]);
   };
 
   const renderContent = () => {
@@ -253,7 +163,7 @@ const App: React.FC = () => {
           <CalendarIcon className="w-12 h-12 mx-auto text-gray-500 mb-4" />
           <p className="text-xl font-semibold text-gray-200">Seu cronograma está a um clique de distância.</p>
           <p className="text-md mt-1 text-gray-400">
-            Selecione seu período e clique em "Buscar Cronograma" para visualizar todas as aulas e eventos.
+            Selecione o período acima e clique em "Buscar Cronograma" para visualizar suas aulas e eventos.
           </p>
         </div>
       );
@@ -328,7 +238,7 @@ const App: React.FC = () => {
                     Faculdade de Ciências Médicas - Paraíba
                 </h1>
                 <p className="mt-3 text-sm md:text-base text-gray-200 max-w-2xl mx-auto" style={{ textShadow: '1px 1px 4px rgba(0,0,0,0.6)' }}>
-                    Consulte o cronograma completo do seu período.
+                    Consulte seu cronograma de aulas e eventos.
                 </p>
             </div>
         </header>
@@ -345,22 +255,6 @@ const App: React.FC = () => {
                             availablePeriods={availablePeriods}
                             onSearch={handleSearch}
                             isLoading={isLoading}
-                            
-                            // Eletivas
-                            availableEletivas={availableEletivas}
-                            selectedEletivas={selectedEletivas}
-                            addEletiva={addEletiva}
-                            removeEletiva={removeEletiva}
-                            eletivaToAdd={eletivaToAdd}
-                            setEletivaToAdd={setEletivaToAdd}
-                            
-                            // Grupos
-                            availableGroups={availableGroups}
-                            selectedGroups={selectedGroups}
-                            addGroup={addGroup}
-                            removeGroup={removeGroup}
-                            groupToAdd={groupToAdd}
-                            setGroupToAdd={setGroupToAdd}
                           />
                           {isAdmin && (
                               <div className="mt-8">

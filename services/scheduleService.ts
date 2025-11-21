@@ -1,5 +1,5 @@
 
-import type { Schedule, ModuleSelection, Aula, Event, AulaEntry, EletivaEntry, AulaGroupDetail } from "../types";
+import type { Schedule, DiaDeAula, ModuleSelection, Aula, Event, AulaEntry, EletivaEntry } from "../types";
 import { defaultAulas, defaultEvents, defaultEletivas } from "./initialData";
 
 // Permite o uso da biblioteca XLSX carregada via tag de script
@@ -11,6 +11,7 @@ const ELETIVAS_KEY = 'afya-schedule-eletivas';
 
 // Helper to interpret dates in DD/MM/AAAA format safely
 export const parseBrDate = (dateString: string): Date => {
+  // Return a very early date if the string is invalid, so it doesn't crash and sorts predictably.
   if (!dateString || typeof dateString !== 'string') {
     return new Date(0);
   }
@@ -19,45 +20,58 @@ export const parseBrDate = (dateString: string): Date => {
     return new Date(0);
   }
   const [day, month, year] = parts.map(Number);
+  // Basic validation
   if (isNaN(day) || isNaN(month) || isNaN(year) || year < 1970 || month < 1 || month > 12 || day < 1 || day > 31) {
     return new Date(0);
   }
+  // The month is 0-indexed in the JS Date constructor
   const date = new Date(year, month - 1, day);
+  // Check for invalid date creations (e.g., new Date('2024', 1, 30) for Feb 30)
   if (isNaN(date.getTime())) {
     return new Date(0);
   }
   return date;
 };
 
+// Helper to format Excel time values (serial numbers, Date objects, or strings) into HH:mm format.
 const formatExcelTime = (value: any): string => {
     if (value instanceof Date) {
+        // Usa getHours() e getMinutes() para evitar problemas de fuso horário,
+        // garantindo que a hora seja lida como está na planilha.
         const hours = String(value.getHours()).padStart(2, '0');
         const minutes = String(value.getMinutes()).padStart(2, '0');
         return `${hours}:${minutes}`;
     }
     if (typeof value === 'number') {
+        // Fallback for when the value is a number but not parsed as a date.
         return XLSX.SSF.format('hh:mm', value);
     }
+    // Fallback for values that are already strings or other types.
     return String(value ?? '').trim();
 };
 
+// Helper to format Excel date values (serial numbers, Date objects, or strings) into DD/MM/YYYY format.
 const formatExcelDate = (value: any): string => {
-    if (!value) return '';
+    if (!value) return ''; // Retorna string vazia para valores nulos ou indefinidos
     if (value instanceof Date) {
         const day = String(value.getUTCDate()).padStart(2, '0');
-        const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+        const month = String(value.getUTCMonth() + 1).padStart(2, '0'); // getUTCMonth is 0-indexed
         const year = value.getUTCFullYear();
         return `${day}/${month}/${year}`;
     }
     if (typeof value === 'number') {
+        // Fallback for when the value is a number but not parsed as a date.
         return XLSX.SSF.format('dd/mm/yyyy', value);
     }
+    // Fallback for values that are already strings or other types.
     return String(value ?? '').trim();
 };
 
+
+// Normaliza o dia da semana para um formato padrão, tornando o sistema robusto a variações de entrada.
 const normalizeDayOfWeek = (day: string): string => {
     if (!day) return '';
-    const d = day.toLowerCase().replace(/[- ]/g, '').trim();
+    const d = day.toLowerCase().replace(/[- ]/g, '').trim(); // Ex: "terça-feira" -> "terçafeira"
     if (d.startsWith('segunda')) return 'Segunda-feira';
     if (d.startsWith('terca') || d.startsWith('terça')) return 'Terça-feira';
     if (d.startsWith('quarta')) return 'Quarta-feira';
@@ -65,23 +79,115 @@ const normalizeDayOfWeek = (day: string): string => {
     if (d.startsWith('sexta')) return 'Sexta-feira';
     if (d.startsWith('sabado') || d.startsWith('sábado')) return 'Sábado';
     if (d.startsWith('domingo')) return 'Domingo';
-    return day;
+    return day; // Retorna o original se não houver correspondência
 };
 
-export const normalizePeriodo = (periodo: string): string => {
+// Normaliza a string do período para apenas o número, tornando a correspondência robusta.
+const normalizePeriodo = (periodo: string): string => {
     if (!periodo) return '';
     const match = String(periodo).match(/\d+/);
     if (match) {
         return match[0];
     }
+    // Retorna a string em minúsculas se for algo como "Geral"
     return String(periodo).trim().toLowerCase();
 }
+
+// Função auxiliar para formatar a lista de grupos combinados
+export const formatGroupLabel = (groups: string[]): string => {
+    if (!groups || groups.length === 0) return "";
+    
+    // Remove duplicatas e valores vazios
+    const uniqueGroups = [...new Set(groups)].filter(g => g.trim() !== '');
+    if (uniqueGroups.length === 0) return "";
+    if (uniqueGroups.length === 1) return uniqueGroups[0];
+
+    // Função para limpar o nome do grupo para ordenação (ex: "GRUPO - A" -> "A")
+    const clean = (g: string) => g.replace(/^(GRUPO|TURMA)(\s*[-–]\s*|\s+)/i, '').trim();
+
+    // Mapeia para objetos com valor original e valor limpo
+    const parsed = uniqueGroups.map(original => {
+        const cleaned = clean(original);
+        const num = parseInt(cleaned, 10);
+        // Ensure it is a strictly numeric string (e.g. "1" not "1A")
+        const isNum = !isNaN(num) && String(num) === cleaned;
+        return {
+            original,
+            cleaned,
+            isNum,
+            valNum: isNum ? num : 0,
+            valStr: cleaned
+        };
+    });
+
+    const numeric = parsed.filter(p => p.isNum);
+    // Check for single letters (A-Z)
+    const alpha = parsed.filter(p => !p.isNum && p.cleaned.length === 1 && /^[a-zA-Z]$/.test(p.cleaned));
+    const others = parsed.filter(p => !p.isNum && !(p.cleaned.length === 1 && /^[a-zA-Z]$/.test(p.cleaned)));
+
+    const parts: string[] = [];
+
+    const getRanges = (nums: number[]): string[] => {
+        if (nums.length === 0) return [];
+        const res: string[] = [];
+        let start = nums[0];
+        let prev = nums[0];
+        
+        for (let i = 1; i < nums.length; i++) {
+            if (nums[i] === prev + 1) {
+                prev = nums[i];
+            } else {
+                if (start === prev) res.push(`${start}`);
+                else res.push(`${start} à ${prev}`);
+                start = nums[i];
+                prev = nums[i];
+            }
+        }
+        if (start === prev) res.push(`${start}`);
+        else res.push(`${start} à ${prev}`);
+        return res;
+    };
+
+    // Process Alpha Ranges First (Usually Group A comes before Group 1 in lists)
+    if (alpha.length > 0) {
+        alpha.sort((a, b) => a.valStr.localeCompare(b.valStr));
+        const codes = alpha.map(a => a.valStr.toUpperCase().charCodeAt(0));
+        const ranges = getRanges(codes).map(r => {
+             if (r.includes(' à ')) {
+                 const [s, e] = r.split(' à ').map(Number);
+                 return `${String.fromCharCode(s)} à ${String.fromCharCode(e)}`;
+             }
+             return String.fromCharCode(Number(r));
+        });
+        parts.push("Grupos " + ranges.join(", "));
+    }
+
+    // Process Numeric Ranges
+    if (numeric.length > 0) {
+        numeric.sort((a, b) => a.valNum - b.valNum);
+        const ranges = getRanges(numeric.map(n => n.valNum));
+        parts.push("Grupos " + ranges.join(", "));
+    }
+    
+    // Process Others
+    if (others.length > 0) {
+        others.sort((a, b) => a.valStr.localeCompare(b.valStr));
+        // Use original cleaned string
+        parts.push("Grupos " + others.map(o => o.cleaned).join(", "));
+    }
+
+    return parts.join(" e ");
+}
+
 
 export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], events: Event[], eletivas: EletivaEntry[] }> => {
     let finalAulas: any[];
     let finalEvents: any[];
     let finalEletivas: any[];
 
+    // --- Lógica de Carregamento em Cascata ---
+
+    // 1. Tenta buscar da rede
     let networkAulas: any[] | null = null;
     let networkEvents: any[] | null = null;
     let networkEletivas: any[] | null = null;
@@ -95,6 +201,7 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
             fetch(`/eletivas.json${cacheBuster}`),
         ]);
 
+        // Processa Aulas: só considera válido se a requisição for bem-sucedida E o array não for vazio.
         if (aulasRes.ok) {
             const data = await aulasRes.json();
             if (Array.isArray(data) && data.length > 0) {
@@ -102,6 +209,7 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
             }
         }
         
+        // Processa Eventos e Avaliações
         const combinedEvents: any[] = [];
         if (eventosRes.ok) {
             const data = await eventosRes.json();
@@ -111,12 +219,15 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
             const data = await avaliacoesRes.json();
             if (Array.isArray(data)) combinedEvents.push(...data);
         }
+        // Apenas considera os dados da rede válidos se eles não estiverem vazios.
         if (combinedEvents.length > 0) {
             networkEvents = combinedEvents;
         }
 
+        // Processa Eletivas
         if (eletivasRes.ok) {
             const data = await eletivasRes.json();
+            // Apenas considera os dados da rede válidos se eles não estiverem vazios.
             if (Array.isArray(data) && data.length > 0) {
                  networkEletivas = data;
             }
@@ -126,6 +237,7 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
         console.warn("Falha na busca de dados da rede. Tentando fallback para o cache local.", error);
     }
 
+    // 2. Decide a fonte de dados final para AULAS (fonte principal)
     if (networkAulas) {
         finalAulas = networkAulas;
         localStorage.setItem(AULAS_KEY, JSON.stringify(finalAulas));
@@ -139,11 +251,12 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
                 finalAulas = defaultAulas;
             }
         } catch (e) {
-            localStorage.removeItem(AULAS_KEY);
+            localStorage.removeItem(AULAS_KEY); // Limpa cache corrompido
             finalAulas = defaultAulas;
         }
     }
 
+    // 3. Decide a fonte final para EVENTOS
     if (networkEvents) {
         finalEvents = networkEvents;
         localStorage.setItem(EVENTS_KEY, JSON.stringify(finalEvents));
@@ -162,6 +275,7 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
         }
     }
     
+    // 4. Decide a fonte final para ELETIVAS
      if (networkEletivas) {
         finalEletivas = networkEletivas;
         localStorage.setItem(ELETIVAS_KEY, JSON.stringify(finalEletivas));
@@ -180,6 +294,7 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
         }
     }
 
+    // --- Higienização dos Dados ---
     const aulas: AulaEntry[] = finalAulas.map((row: any) => {
         const obsKey = Object.keys(row).find(k => {
             const lowerK = k.toLowerCase().trim();
@@ -227,50 +342,17 @@ export const initializeAndLoadData = async (): Promise<{ aulas: AulaEntry[], eve
     return { aulas, events, eletivas };
 }
 
-const isNumericGroup = (groupName: string): boolean => {
-    return /\d/.test(groupName);
-};
-
-const getCleanGroupName = (g: string) => g.replace(/^(GRUPO|Grupo)\s*-\s*|^(GRUPO|Grupo)\s+|^(TURMA|Turma)\s+/i, '').trim();
-
-const getGroupLabelForEntries = (entries: AulaEntry[]): string => {
-    const groups = [...new Set(entries.map(e => e.grupo))];
-    const cleanGroups = groups.map(getCleanGroupName).filter(Boolean);
-    
-    if (cleanGroups.length === 0) return "";
-    
-    cleanGroups.sort((a, b) => {
-        const isNumA = !isNaN(Number(a));
-        const isNumB = !isNaN(Number(b));
-        if (isNumA && isNumB) return Number(a) - Number(b);
-        if (!isNumA && !isNumB) return a.localeCompare(b);
-        return isNumA ? 1 : -1;
-    });
-
-    if (cleanGroups.length === 1) return `Grupo ${cleanGroups[0]}`;
-    
-    const isAllNumeric = cleanGroups.every(g => !isNaN(Number(g)));
-    if (isAllNumeric) {
-         return `Grupos ${cleanGroups[0]} à ${cleanGroups[cleanGroups.length - 1]}`;
-    }
-    
-    const isAllSingleLetters = cleanGroups.every(g => g.length === 1 && g.match(/[a-zA-Z]/));
-    if (isAllSingleLetters) {
-         return `Grupos ${cleanGroups[0]} à ${cleanGroups[cleanGroups.length - 1]}`;
-    }
-    
-    if (cleanGroups.length <= 5) {
-        return `Grupos ${cleanGroups.join(', ')}`;
-    }
-    
-    return `Grupos ${cleanGroups[0]} à ${cleanGroups[cleanGroups.length - 1]}`;
-}
 
 const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
     const weekOrder = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira'];
-    
-    const DAY_START_MIN = 8 * 60;
-    const DAY_END_MIN = 22 * 60;
+    const DAY_START_MINUTES = 8 * 60; // 08:00
+    const DAY_END_MINUTES = 22 * 60; // 22:00
+
+    const formatMinutes = (totalMinutes: number): string => {
+        const hours = Math.floor(totalMinutes / 60).toString().padStart(2, '0');
+        const minutes = (totalMinutes % 60).toString().padStart(2, '0');
+        return `${hours}:${minutes}`;
+    };
 
     const parseMinutes = (timeStr: string): number => {
         if (!timeStr || !timeStr.includes(':')) return 0;
@@ -279,272 +361,155 @@ const groupAulasIntoSchedule = (aulas: AulaEntry[]): Schedule => {
         return hours * 60 + minutes;
     };
 
-    const calculateGaps = (intervals: {start: number, end: number}[], dayStart: number, dayEnd: number): {start: number, end: number}[] => {
-        const minGap = 30;
-        if (intervals.length === 0) return [{start: dayStart, end: dayEnd}];
-        
-        intervals.sort((a, b) => a.start - b.start);
-        const mergedOccupied: {start: number, end: number}[] = [];
-        let current = intervals[0];
-        for(let i=1; i < intervals.length; i++) {
-            if (intervals[i].start < current.end) {
-                current.end = Math.max(current.end, intervals[i].end);
-            } else {
-                mergedOccupied.push(current);
-                current = intervals[i];
-            }
+    // Agrupa por dia
+    const aulasByDay = aulas.reduce<Record<string, AulaEntry[]>>((acc, aulaEntry) => {
+        const dia = aulaEntry.dia_semana;
+        if (!dia || !aulaEntry.disciplina || aulaEntry.disciplina.trim() === '') {
+            return acc;
         }
-        mergedOccupied.push(current);
-
-        const gaps: {start: number, end: number}[] = [];
-
-        if (mergedOccupied[0].start - dayStart > minGap) {
-            gaps.push({start: dayStart, end: mergedOccupied[0].start});
+        if (!acc[dia]) {
+            acc[dia] = [];
         }
+        acc[dia].push(aulaEntry);
+        return acc;
+    }, {});
 
-        for(let i=0; i < mergedOccupied.length - 1; i++) {
-            const gapStart = mergedOccupied[i].end;
-            const gapEnd = mergedOccupied[i+1].start;
-            if (gapEnd - gapStart > minGap) {
-                gaps.push({start: gapStart, end: gapEnd});
-            }
-        }
-
-        if (dayEnd - mergedOccupied[mergedOccupied.length -1].end > minGap) {
-            gaps.push({start: mergedOccupied[mergedOccupied.length -1].end, end: dayEnd});
-        }
-        
-        return gaps;
-    };
-
-    const formatTime = (totalMinutes: number): string => {
-        const h = Math.floor(totalMinutes / 60).toString().padStart(2, '0');
-        const m = (totalMinutes % 60).toString().padStart(2, '0');
-        return `${h}:${m}`;
-    };
-
+    // Itera sobre os dias da semana para construir um cronograma completo.
     const finalSchedule: Schedule = weekOrder.map(dayName => {
-        const dayEntries = aulas.filter(a => a.dia_semana === dayName);
+        const dailyEntries = aulasByDay[dayName] || [];
         
-        const disciplineGroups: { [key: string]: AulaEntry[] } = {};
-        dayEntries.forEach(entry => {
-            const key = entry.disciplina; 
-            if (!disciplineGroups[key]) {
-                disciplineGroups[key] = [];
-            }
-            disciplineGroups[key].push(entry);
-        });
+        // --- Lógica de Agrupamento de Turmas ---
+        // Mapa para agrupar aulas idênticas (mesma disciplina e horário)
+        // A chave considera apenas Horário e Disciplina para mesclar grupos diferentes
+        const groupedMap = new Map<string, { 
+            horario_inicio: string;
+            horario_fim: string;
+            disciplina: string;
+            groups: Set<string>;
+            salas: Set<string>;
+            professores: Set<string>;
+            tipos: Set<string>;
+            modulos: Set<string>;
+            observacoes: Set<string>;
+        }>();
 
-        let dayAulas: Aula[] = Object.keys(disciplineGroups).map(disciplineKey => {
-            const groupEntries = disciplineGroups[disciplineKey];
+        dailyEntries.forEach(entry => {
+            // Chave unificada para agrupar todos os grupos que tenham a mesma aula no mesmo horário
+            const key = `${entry.horario_inicio}|${entry.horario_fim}|${entry.disciplina}`;
             
-            const initialSubSessions: AulaGroupDetail[] = groupEntries.map(entry => {
-                 const startMin = parseMinutes(entry.horario_inicio);
-                 const endMin = parseMinutes(entry.horario_fim);
-                 return {
-                    grupo: entry.grupo,
-                    sala: entry.sala,
-                    horario: `${entry.horario_inicio} às ${entry.horario_fim}`,
-                    professor: entry.professor || 'A definir',
-                    tipo: entry.tipo,
-                    observacao: entry.observacao,
-                    startMinutes: startMin,
-                    endMinutes: endMin
-                };
-            });
-
-            // === GROUP MERGING LOGIC ===
-            initialSubSessions.sort((a, b) => a.startMinutes - b.startMinutes);
-            
-            const mergedSubSessions: AulaGroupDetail[] = [];
-            const mergeMap = new Map<string, number>();
-
-            initialSubSessions.forEach(session => {
-                const key = `${session.startMinutes}-${session.endMinutes}-${session.sala.trim().toLowerCase()}`;
-                const cleanGroup = getCleanGroupName(session.grupo);
-                
-                if (mergeMap.has(key)) {
-                    const idx = mergeMap.get(key)!;
-                    const existing = mergedSubSessions[idx];
-                    
-                    const currentGroups = existing.grupo.split(', ');
-                    if (!currentGroups.includes(cleanGroup)) {
-                        currentGroups.push(cleanGroup);
-                        currentGroups.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
-                        existing.grupo = currentGroups.join(', ');
-                    }
-                    if (session.professor && session.professor !== 'A definir' && !existing.professor.includes(session.professor)) {
-                        existing.professor += ` / ${session.professor}`;
-                    }
-                } else {
-                    const newSession = { ...session, grupo: cleanGroup };
-                    const idx = mergedSubSessions.push(newSession) - 1;
-                    mergeMap.set(key, idx);
-                }
-            });
-            
-            mergedSubSessions.sort((a, b) => a.startMinutes - b.startMinutes);
-
-            const earliestStart = mergedSubSessions.length > 0 ? mergedSubSessions[0].horario.split(' às ')[0] : '';
-            const latestEnd = mergedSubSessions.length > 0 ? mergedSubSessions[mergedSubSessions.length - 1].horario.split(' às ')[1] : '';
-            const modulo = groupEntries[0].modulo;
-
-            return {
-                disciplina: disciplineKey,
-                modulo: modulo,
-                horario: `${earliestStart} - ${latestEnd}`,
-                subSessions: mergedSubSessions,
-                observacao: ''
-            };
-        });
-
-        dayAulas.sort((a, b) => {
-            const startA = a.subSessions[0]?.startMinutes || 0;
-            const startB = b.subSessions[0]?.startMinutes || 0;
-            return startA - startB;
-        });
-
-        const numericEntries = dayEntries.filter(e => isNumericGroup(e.grupo));
-        const alphaEntries = dayEntries.filter(e => !isNumericGroup(e.grupo));
-        
-        const hasNumeric = numericEntries.length > 0;
-        const hasAlpha = alphaEntries.length > 0;
-        const hasBoth = hasNumeric && hasAlpha;
-
-        // Labels for Free Slots based on the groups present in the day
-        const numericLabel = getGroupLabelForEntries(numericEntries);
-        const alphaLabel = getGroupLabelForEntries(alphaEntries);
-
-        const numericIntervals = numericEntries.map(e => ({ start: parseMinutes(e.horario_inicio), end: parseMinutes(e.horario_fim) }));
-        const alphaIntervals = alphaEntries.map(e => ({ start: parseMinutes(e.horario_inicio), end: parseMinutes(e.horario_fim) }));
-
-        const numericGaps = hasNumeric ? calculateGaps(numericIntervals, DAY_START_MIN, DAY_END_MIN) : [];
-        const alphaGaps = hasAlpha ? calculateGaps(alphaIntervals, DAY_START_MIN, DAY_END_MIN) : [];
-
-        const freeSlots: Aula[] = [];
-
-        const createFreeSlot = (start: number, end: number, typeLabel: string): Aula => ({
-            isFreeSlot: true,
-            disciplina: 'Horário Livre',
-            modulo: '',
-            horario: `${formatTime(start)} - ${formatTime(end)}`,
-            subSessions: [],
-            observacao: typeLabel
-        });
-
-        if (hasBoth) {
-            const processedNumericIndices = new Set<number>();
-            const processedAlphaIndices = new Set<number>();
-
-            const combinedLabel = [numericLabel, alphaLabel].filter(Boolean).join(' e ');
-
-            numericGaps.forEach((nGap, nIdx) => {
-                alphaGaps.forEach((aGap, aIdx) => {
-                    if (nGap.start === aGap.start && nGap.end === aGap.end) {
-                        freeSlots.push(createFreeSlot(nGap.start, nGap.end, combinedLabel));
-                        processedNumericIndices.add(nIdx);
-                        processedAlphaIndices.add(aIdx);
-                    }
+            if (!groupedMap.has(key)) {
+                groupedMap.set(key, { 
+                    horario_inicio: entry.horario_inicio,
+                    horario_fim: entry.horario_fim,
+                    disciplina: entry.disciplina,
+                    groups: new Set(),
+                    salas: new Set(),
+                    professores: new Set(),
+                    tipos: new Set(),
+                    modulos: new Set(),
+                    observacoes: new Set()
                 });
-            });
+            }
+            const groupData = groupedMap.get(key)!;
+            if (entry.grupo) groupData.groups.add(entry.grupo);
+            if (entry.sala) groupData.salas.add(entry.sala);
+            if (entry.professor) groupData.professores.add(entry.professor);
+            if (entry.tipo) groupData.tipos.add(entry.tipo);
+            if (entry.modulo) groupData.modulos.add(entry.modulo);
+            if (entry.observacao) groupData.observacoes.add(entry.observacao);
+        });
 
-            numericGaps.forEach((gap, idx) => {
-                if (!processedNumericIndices.has(idx)) {
-                    freeSlots.push(createFreeSlot(gap.start, gap.end, numericLabel));
-                }
-            });
+        // Converte o mapa de volta para objetos de Aula e inclui metadados de tempo
+        const mergedAulas = Array.from(groupedMap.values()).map((data) => {
+             const groupArray = Array.from(data.groups);
+             const formattedGroup = formatGroupLabel(groupArray);
+             
+             // Helper to join sets into a string with separator
+             const joinSet = (set: Set<string>) => Array.from(set).filter(s => s.trim() !== '').join(' / ');
 
-            alphaGaps.forEach((gap, idx) => {
-                if (!processedAlphaIndices.has(idx)) {
-                    freeSlots.push(createFreeSlot(gap.start, gap.end, alphaLabel));
-                }
-            });
+             return {
+                horario: `${data.horario_inicio} - ${data.horario_fim}`,
+                disciplina: data.disciplina,
+                sala: joinSet(data.salas),
+                modulo: joinSet(data.modulos),
+                grupo: formattedGroup, // Usa o label formatado (ex: "Grupos A à D e Grupos 1 à 2")
+                originalGroups: groupArray, // Stores raw groups for title formatting
+                tipo: joinSet(data.tipos),
+                professor: joinSet(data.professores),
+                observacao: joinSet(data.observacoes),
+                startMinutes: parseMinutes(data.horario_inicio),
+                endMinutes: parseMinutes(data.horario_fim)
+             };
+        });
 
-        } else {
-            const isNumeric = hasNumeric;
-            const activeGaps = isNumeric ? numericGaps : (hasAlpha ? alphaGaps : []);
-            const label = isNumeric ? numericLabel : (hasAlpha ? alphaLabel : 'Geral');
+        const sortedAulas = mergedAulas
+            .filter(aula => aula.startMinutes > 0 && aula.endMinutes > 0 && aula.endMinutes > aula.startMinutes)
+            .sort((a, b) => a.startMinutes - b.startMinutes || a.endMinutes - b.endMinutes);
+
+        const dayScheduleWithGaps: Aula[] = [];
+        let currentTime = DAY_START_MINUTES;
+
+        // Adiciona os intervalos livres entre as aulas.
+        for (const aula of sortedAulas) {
+            if (aula.startMinutes > currentTime) {
+                dayScheduleWithGaps.push({
+                    isFreeSlot: true,
+                    disciplina: 'Horário Livre',
+                    horario: `${formatMinutes(currentTime)} - ${formatMinutes(aula.startMinutes)}`,
+                    sala: '',
+                    modulo: '',
+                });
+            }
             
-            activeGaps.forEach(gap => {
-                freeSlots.push(createFreeSlot(gap.start, gap.end, label));
+            dayScheduleWithGaps.push(aula);
+            // Ensure that with overlapping classes, we use the latest end time
+            // to correctly calculate the next free slot.
+            currentTime = Math.max(currentTime, aula.endMinutes);
+        }
+
+        // Adiciona o intervalo livre final, se houver, até o fim do dia.
+        if (currentTime < DAY_END_MINUTES) {
+            dayScheduleWithGaps.push({
+                isFreeSlot: true,
+                disciplina: 'Horário Livre',
+                horario: `${formatMinutes(currentTime)} - ${formatMinutes(DAY_END_MINUTES)}`,
+                sala: '',
+                modulo: '',
             });
         }
-        
-        dayAulas = [...dayAulas, ...freeSlots].sort((a, b) => {
-             const getStartFromStr = (str: string) => {
-                const parts = str.split(' - ')[0].split(':');
-                if (parts.length === 2) return parseInt(parts[0])*60 + parseInt(parts[1]);
-                return 0;
-            };
-            
-            const startA = a.isFreeSlot ? getStartFromStr(a.horario) : (a.subSessions[0]?.startMinutes || 0);
-            const startB = b.isFreeSlot ? getStartFromStr(b.horario) : (b.subSessions[0]?.startMinutes || 0);
-            return startA - startB;
-        });
 
         return {
             dia: dayName,
-            aulas: dayAulas
+            aulas: dayScheduleWithGaps,
         };
     });
-
+    
     return finalSchedule;
 };
 
+
 export const fetchSchedule = (
     periodo: string, 
-    selections: Omit<ModuleSelection, 'id'>[], 
-    selectedGroups: string[], 
-    selectedEletivas: string[],
-    allAulas: AulaEntry[],
-    allEletivas: EletivaEntry[]
+    allAulas: AulaEntry[]
 ): Schedule | null => {
-    let matchingAulas = allAulas.filter(aula => 
+    const matchingAulas = allAulas.filter(aula => 
         String(aula.periodo) === String(periodo)
     );
-
-    if (selectedGroups.length > 0) {
-        matchingAulas = matchingAulas.filter(aula => selectedGroups.includes(aula.grupo));
-    }
-
-    const matchingEletivasAsAulaEntries: AulaEntry[] = allEletivas
-        .filter(eletiva => selectedEletivas.includes(eletiva.disciplina))
-        .map((eletiva): AulaEntry => ({
-            periodo: periodo,
-            modulo: 'Eletiva',
-            grupo: 'Eletiva',
-            dia_semana: eletiva.dia_semana,
-            disciplina: eletiva.disciplina,
-            sala: eletiva.sala,
-            horario_inicio: eletiva.horario_inicio,
-            horario_fim: eletiva.horario_fim,
-            tipo: eletiva.tipo,
-            professor: eletiva.professor,
-            observacao: '',
-        }));
-
-    const combinedAulas = [...matchingAulas, ...matchingEletivasAsAulaEntries];
-
-    return groupAulasIntoSchedule(combinedAulas);
+    return groupAulasIntoSchedule(matchingAulas);
 };
 
-export const getUniqueModulesForPeriod = (periodo: string, allAulas: AulaEntry[]): string[] => {
-    const modulesForPeriod = allAulas
-        .filter(entry => String(entry.periodo) === String(periodo))
-        .map(entry => entry.modulo);
-        
-    const uniqueModules = [...new Set(modulesForPeriod)];
-    uniqueModules.sort();
-    return uniqueModules;
-};
-
-export const fetchEvents = (periodo: string, selections: Omit<ModuleSelection, 'id'>[], allEvents: Event[]): Event[] | null => {
+export const fetchEvents = (periodo: string, allEvents: Event[]): Event[] | null => {
     const normalizedSelectedPeriodo = normalizePeriodo(periodo);
     
     const matchingEvents = allEvents.filter(event => {
         const normalizedEventPeriodo = normalizePeriodo(event.periodo);
+        
+        // Evento é "Geral" se o período dele for 'geral'.
         const isGeneralEvent = normalizedEventPeriodo === 'geral';
+
+        // Evento é específico do período se o período normalizado corresponder.
         const isPeriodMatch = normalizedEventPeriodo === normalizedSelectedPeriodo;
+
         return isGeneralEvent || isPeriodMatch;
     });
 
@@ -577,59 +542,6 @@ export const getUniquePeriods = (allAulas: AulaEntry[]): string[] => {
     return uniquePeriods;
 };
 
-export const getUniqueGroupsForPeriod = (periodo: string, allAulas: AulaEntry[]): string[] => {
-    const groups = allAulas
-        .filter(entry => String(entry.periodo) === String(periodo))
-        .map(entry => entry.grupo);
-    
-    const uniqueGroups = [...new Set(groups)];
-    
-    uniqueGroups.sort((a, b) => {
-        const extractPart = (s: string) => s.split('-').pop()?.trim() || s;
-        const partA = extractPart(a);
-        const partB = extractPart(b);
-        const isNumA = !isNaN(Number(partA));
-        const isNumB = !isNaN(Number(partB));
-        if (isNumA && isNumB) return Number(partA) - Number(partB);
-        if (!isNumA && !isNumB) return partA.localeCompare(partB);
-        if (isNumA) return 1;
-        if (isNumB) return -1;
-        return a.localeCompare(b);
-    });
-
-    return uniqueGroups;
-};
-
-export const getUniqueGroupsForModule = (periodo: string, modulo: string, allAulas: AulaEntry[]): string[] => {
-    const groups = allAulas
-        .filter(entry => String(entry.periodo) === String(periodo) && entry.modulo === modulo)
-        .map(entry => entry.grupo);
-    
-    const uniqueGroups = [...new Set(groups)];
-    
-    uniqueGroups.sort((a, b) => {
-        const extractPart = (s: string) => s.split('-').pop()?.trim() || s;
-        const partA = extractPart(a);
-        const partB = extractPart(b);
-        const isNumA = !isNaN(Number(partA));
-        const isNumB = !isNaN(Number(partB));
-        if (isNumA && isNumB) return Number(partA) - Number(partB);
-        if (!isNumA && !isNumB) return partA.localeCompare(partB);
-        if (isNumA) return 1;
-        if (isNumB) return -1;
-        return a.localeCompare(b);
-    });
-
-    return uniqueGroups;
-};
-
-export const getUniqueEletivas = (allEletivas: EletivaEntry[]): string[] => {
-    const eletivas = allEletivas.map(e => e.disciplina);
-    const uniqueEletivas = [...new Set(eletivas)];
-    uniqueEletivas.sort();
-    return uniqueEletivas;
-};
-
 export const updateDataFromExcel = async (file: File): Promise<{ aulasData: AulaEntry[], eventsData: Event[], eletivasData: EletivaEntry[], eventsSheetName: string | undefined }> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -640,7 +552,7 @@ export const updateDataFromExcel = async (file: File): Promise<{ aulasData: Aula
                 
                 const aulasSheet = workbook.Sheets['Aulas'];
                 const eletivasSheet = workbook.Sheets['Eletivas'];
-                const eventosSheetName = workbook.SheetNames.find((name: string) => {
+                const eventosSheetName = workbook.SheetNames.find(name => {
                     const lowerCaseName = name.toLowerCase().trim();
                     return lowerCaseName === 'eventos' || lowerCaseName === 'avaliações';
                 });
@@ -650,6 +562,7 @@ export const updateDataFromExcel = async (file: File): Promise<{ aulasData: Aula
                   return reject(new Error("Aba 'Aulas' não encontrada na planilha."));
                 }
                 
+                // Processa as linhas com chaves case-insensitive
                 const processRows = (sheet: any) => {
                     if (!sheet) return [];
                     const rawData = XLSX.utils.sheet_to_json(sheet);
@@ -712,6 +625,7 @@ export const updateDataFromExcel = async (file: File): Promise<{ aulasData: Aula
                     }));
                 }
 
+                // Validação de cabeçalhos
                 if (aulasData.length > 0 && (!aulasData[0].dia_semana || !aulasData[0].horario_inicio)) {
                     return reject(new Error("Formato incorreto na aba 'Aulas'. Verifique os cabeçalhos das colunas."));
                 }

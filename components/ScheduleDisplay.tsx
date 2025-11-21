@@ -4,201 +4,114 @@ import type { Schedule, DiaDeAula, Aula } from '../types';
 import ClockIcon from './icons/ClockIcon';
 import LocationIcon from './icons/LocationIcon';
 import NotFoundIcon from './icons/NotFoundIcon';
+import ClipboardListIcon from './icons/ClipboardListIcon';
 import UserIcon from './icons/UserIcon';
 import InfoIcon from './icons/InfoIcon';
 import ExternalLinkIcon from './icons/ExternalLinkIcon';
-import SpinnerIcon from './icons/SpinnerIcon';
 import CoffeeIcon from './icons/CoffeeIcon';
+import BookIcon from './icons/BookIcon';
+import SpinnerIcon from './icons/SpinnerIcon';
 import { stringToColor } from '../services/colorService';
-import { afyaLogoDataUrl } from './icons/AfyaLogo';
+import { formatGroupLabel } from '../services/scheduleService';
 
-// Helper para exibir a observação em destaque
-const ObservacaoDisplay: React.FC<{ text: string }> = ({ text }) => {
-  if (!text) return null;
-  return (
-    <div className="mt-2 pt-2 border-t border-slate-700/50">
-      <div className="flex items-start gap-2 text-xs text-amber-300 bg-amber-900/20 p-2 rounded-md">
-        <InfoIcon className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-        <p>{text}</p>
-      </div>
+// FIX: Removed redeclared global types for jspdf and html2canvas. These are now defined in types.ts.
+
+// Componente de helper para exibir uma linha de informação com ícone
+const AulaInfo: React.FC<{ icon: React.ReactNode; label: string; text: string }> = ({ icon, label, text }) => (
+  <div className="flex items-start gap-2 text-sm">
+    <span className="text-afya-pink flex-shrink-0 w-3 h-3 mt-0.5">{icon}</span>
+    <div className="text-gray-400">
+      <span className="font-semibold text-gray-200">{label}:</span> {text}
     </div>
-  );
-};
-
-// Card para horários livres / intervalos
-const FreeSlotCard: React.FC<{ aula?: Aula; isFullDay?: boolean }> = ({ aula, isFullDay }) => (
-  <div className={`bg-green-50/5 border border-green-200/20 rounded-lg flex flex-col items-center justify-center text-green-200/80 shadow-sm free-slot-card ${isFullDay ? 'p-6 h-40 gap-2' : 'p-3 gap-2'}`}>
-     <div className="flex items-center gap-2 opacity-80">
-         <CoffeeIcon className={`${isFullDay ? 'w-8 h-8' : 'w-5 h-5'}`} />
-         <span className={`font-medium tracking-wide ${isFullDay ? 'text-lg' : 'text-sm'}`}>Horário Livre</span>
-     </div>
-     
-     {isFullDay ? (
-        <span className="text-xs opacity-60 mt-1">Dia sem atividades agendadas</span>
-     ) : (
-        aula && (
-         <div className="flex flex-col items-center w-full">
-             <span className="text-xs opacity-90 font-semibold mb-1">{aula.horario}</span>
-             {aula.observacao && (
-                 <div className="mt-1 w-full border-t border-green-200/20 pt-1 text-center">
-                     <span className="text-[10px] uppercase tracking-wider font-bold opacity-70 block text-xs">
-                        PARA:
-                     </span>
-                     <span className="text-xs font-bold text-green-100 group-target">
-                         {aula.observacao}
-                     </span>
-                 </div>
-             )}
-         </div>
-        )
-     )}
   </div>
 );
 
-// Card de aula
+// Card de aula redesenhado com mais detalhes
 const AulaCard: React.FC<{ aula: Aula }> = ({ aula }) => {
   const color = stringToColor(aula.disciplina);
-  
   return (
     <div 
-      className="bg-slate-800 rounded-lg shadow-md border border-slate-700 border-l-4 overflow-hidden aula-card flex flex-col"
-      style={{ 
-        borderLeftColor: color,
-        '--card-color': color
-      } as React.CSSProperties}
+      className="bg-slate-800 p-4 rounded-lg shadow-md border border-slate-700 border-l-4 aula-card"
+      style={{ borderLeftColor: color }}
     >
-      {/* Header da Disciplina */}
-      <div className="p-3 bg-slate-800/50 border-b border-slate-700 discipline-header">
-        <div className="flex justify-between items-start gap-2 w-full">
-           <h4 className="font-bold text-gray-100 text-base leading-tight">
-            {aula.disciplina}
-          </h4>
-          {aula.modulo === 'Eletiva' && (
-            <span className="bg-purple-900/50 text-purple-300 text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 uppercase tracking-wider">
-              ELETIVA
+      <div className="flex justify-between items-start gap-2 mb-3">
+        <h4 className="font-semibold text-gray-100 text-base leading-tight">
+          {aula.disciplina}
+        </h4>
+        <div className="flex flex-col items-end gap-1 max-w-[50%]">
+            {aula.modulo === 'Eletiva' && (
+            <span className="bg-purple-900/50 text-purple-300 text-xs font-semibold px-2.5 py-0.5 rounded-full shrink-0">
+                ELETIVA
             </span>
-          )}
+            )}
+            {aula.grupo && (
+             <span className="bg-blue-900/50 text-blue-300 text-xs font-semibold px-2.5 py-0.5 rounded-lg shrink-0 text-right leading-tight">
+                {aula.grupo}
+             </span>
+            )}
         </div>
       </div>
-
-      {/* Lista de Grupos - Renderizados como mini-cards internos */}
-      <div className="flex-grow p-3 space-y-3">
-        {aula.subSessions.map((sessao, idx) => {
-            const isMultiGroup = sessao.grupo.includes(',');
-            return (
-            <div 
-                key={`${sessao.grupo}-${idx}`} 
-                className="bg-slate-900/50 border border-slate-700 rounded-md p-3 aula-inner-card"
-            >
-                <div className="flex flex-wrap justify-between items-center gap-2 mb-2 border-b border-slate-700/50 pb-2">
-                     <span className="font-bold text-afya-blue bg-blue-900/20 px-2 py-0.5 rounded text-xs border border-blue-900/30">
-                        {isMultiGroup ? 'Grupos:' : 'Grupo:'} {sessao.grupo}
-                     </span>
-                     <span className="text-gray-300 flex items-center gap-1 text-xs font-medium">
-                        <ClockIcon className="w-3 h-3 text-gray-500" /> {sessao.horario}
-                     </span>
-                </div>
-                
-                <div className="space-y-1 text-gray-400 text-xs">
-                     <div className="flex items-start gap-2 items-start">
-                        <LocationIcon className="w-3 h-3 text-afya-pink shrink-0 mt-0.5" />
-                        <span className="" title={sessao.sala}>Sala: <span className="text-gray-300 font-medium">{sessao.sala}</span></span>
-                     </div>
-                     <div className="flex items-start gap-2 items-start">
-                        <UserIcon className="w-3 h-3 text-afya-pink shrink-0 mt-0.5" />
-                         <span className="" title={sessao.professor}>Prof: <span className="text-gray-300 font-medium">{sessao.professor}</span></span>
-                     </div>
-                </div>
-                
-                {sessao.observacao && <ObservacaoDisplay text={sessao.observacao} />}
-            </div>
-            );
-        })}
+      <div className="space-y-2">
+        <AulaInfo icon={<ClockIcon />} label="Horário" text={aula.horario} />
+        {aula.tipo && <AulaInfo icon={<ClipboardListIcon />} label="Tipo" text={aula.tipo} />}
+        <AulaInfo icon={<LocationIcon />} label="Sala" text={aula.sala} />
+        {aula.professor && <AulaInfo icon={<UserIcon />} label="Professor" text={aula.professor} />}
       </div>
-
-      {/* Observação Geral da Disciplina (se houver e não estiver coberta por grupos) */}
       {aula.observacao && (
-        <div className="p-3 bg-slate-900/30 border-t border-slate-700 text-xs">
-             <ObservacaoDisplay text={aula.observacao} />
+        <div className="mt-4 pt-3 border-t border-slate-700">
+            <div className="flex items-start gap-3 text-sm text-amber-300 bg-amber-900/30 p-3 rounded-lg">
+                <InfoIcon className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
+                <p>{aula.observacao}</p>
+            </div>
         </div>
       )}
     </div>
   );
 };
 
-// Card do dia
+// Card informativo para os intervalos livres - com estilo para dia inteiro
+const FreeSlotCard: React.FC<{ horario: string, isFullDay?: boolean }> = ({ horario, isFullDay = false }) => (
+  <div className={`rounded-lg border text-center p-3 flex flex-col items-center justify-center free-slot-card
+    ${isFullDay 
+      ? 'bg-emerald-950 border-emerald-800 text-emerald-400 flex-grow min-h-[200px]' 
+      : 'bg-emerald-900/60 border-emerald-800 text-emerald-300'
+    }`
+  }>
+    <div className={`flex items-center gap-2 ${isFullDay ? 'mb-2' : 'mb-1'}`}>
+      <CoffeeIcon className={isFullDay ? 'w-6 h-6' : 'w-5 h-5'} />
+      <BookIcon className={isFullDay ? 'w-6 h-6' : 'w-5 h-5'} />
+    </div>
+    <p className={`font-semibold ${isFullDay ? 'text-lg' : 'text-sm'}`}>Horário Livre</p>
+    <p className={`${isFullDay ? 'text-sm' : 'text-xs'}`}>{horario}</p>
+  </div>
+);
+
+
+// Card do dia, que agrupa os cards de aula
 const DiaCard: React.FC<{ diaDeAula: DiaDeAula }> = ({ diaDeAula }) => {
+  const isFullDayFree = diaDeAula.aulas.length === 1 && diaDeAula.aulas[0].isFreeSlot;
+
   return (
     <div className="bg-slate-800 rounded-xl shadow-lg flex flex-col h-full overflow-hidden border border-slate-700 dia-card">
-      <h3 className="bg-afya-pink text-white font-bold p-3 text-center tracking-wide flex-shrink-0 text-lg sticky top-0 z-10">
+      <h3 className="bg-afya-pink text-white font-bold p-3 text-center tracking-wide flex-shrink-0 text-lg">
         {diaDeAula.dia}
       </h3>
-      <div className="p-4 space-y-4 flex-grow flex flex-col bg-slate-800">
-        {diaDeAula.aulas.length === 0 ? (
-            <FreeSlotCard isFullDay={true} />
-        ) : (
-            diaDeAula.aulas.map((aula, index) => (
-                aula.isFreeSlot ? (
-                    <FreeSlotCard key={`free-${index}`} aula={aula} />
-                ) : (
-                    <AulaCard key={`${aula.disciplina}-${index}`} aula={aula} />
-                )
-            ))
+      <div className={`p-4 space-y-4 flex-grow flex flex-col ${isFullDayFree ? 'h-full' : ''}`}>
+        {diaDeAula.aulas.map((aula, index) =>
+          aula.isFreeSlot ? (
+            <FreeSlotCard 
+              key={`free-${diaDeAula.dia}-${index}`} 
+              horario={aula.horario} 
+              isFullDay={isFullDayFree} 
+            />
+          ) : (
+            <AulaCard key={`${aula.disciplina}-${aula.horario}-${index}`} aula={aula} />
+          )
         )}
       </div>
     </div>
   );
 };
-
-const getGroupRangeSummary = (schedule: Schedule): string => {
-    const allGroups = new Set<string>();
-    
-    // 1. Extrair todos os grupos únicos do cronograma visível
-    schedule.forEach(day => {
-        day.aulas.forEach(aula => {
-            if (aula.isFreeSlot) return;
-            
-            aula.subSessions.forEach(sub => {
-                const subs = sub.grupo.split(',').map(s => s.trim());
-                subs.forEach(cleanName => {
-                    if (cleanName && cleanName.toLowerCase() !== 'eletiva' && cleanName.toLowerCase() !== 'geral') {
-                        allGroups.add(cleanName);
-                    }
-                });
-            });
-        });
-    });
-
-    const groupsArray = Array.from(allGroups);
-    if (groupsArray.length === 0) return "";
-
-    // 2. Separar em Numéricos e Alfabéticos
-    const numericGroups = groupsArray.filter(g => !isNaN(Number(g)));
-    const alphaGroups = groupsArray.filter(g => isNaN(Number(g)));
-
-    // 3. Ordenar cada lista
-    numericGroups.sort((a, b) => Number(a) - Number(b));
-    alphaGroups.sort((a, b) => a.localeCompare(b));
-
-    // 4. Função auxiliar para formatar o intervalo
-    const formatRange = (list: string[]) => {
-        if (list.length === 0) return "";
-        if (list.length === 1) return `Grupo ${list[0]}`;
-        if (list.length <= 3) return `Grupos ${list.join(', ')}`; // Lista curta
-        return `Grupos de ${list[0]} a ${list[list.length - 1]}`; // Intervalo
-    };
-
-    const numericSummary = formatRange(numericGroups);
-    const alphaSummary = formatRange(alphaGroups);
-
-    // 5. Combinar os resultados
-    if (numericSummary && alphaSummary) {
-        return `${alphaSummary} e ${numericSummary}`;
-    }
-
-    return numericSummary || alphaSummary;
-};
-
 
 interface ScheduleDisplayProps {
   schedule: Schedule | null;
@@ -208,276 +121,232 @@ interface ScheduleDisplayProps {
 const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) => {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  const handleViewPdf = async () => {
-    const scheduleContent = document.getElementById('schedule-pdf-content');
-    if (!scheduleContent) return;
-  
-    setIsGeneratingPdf(true);
-  
-    // --- 1. Prepare Temporary Containers ---
-    const tempContainer = document.createElement('div');
-    tempContainer.className = 'pdf-export-container';
-    tempContainer.classList.add('capturing');
+  const getFormattedGroups = (): string => {
+    if (!schedule) return "";
     
-    const CAPTURE_WIDTH = 1280; // A4 Landscape Optimized Width
-
-    // 1a. Create Header Element
-    const headerWrapper = document.createElement('div');
-    headerWrapper.style.backgroundColor = '#ffffff';
-    headerWrapper.style.padding = '20px 40px 0 40px';
-    headerWrapper.style.width = `${CAPTURE_WIDTH}px`;
-
-    // Use Base64 Logo to prevent CORS issues
-    const logoSrc = afyaLogoDataUrl;
-
-    headerWrapper.innerHTML = `
-        <div class="pdf-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #CE0058; padding-bottom: 15px; margin-bottom: 10px;">
-            <div style="flex-shrink: 0;">
-                 <img src="${logoSrc}" style="height: 55px; width: auto; object-fit: contain; display: block;" alt="Afya Logo" />
-            </div>
-            <div style="text-align: right; font-family: sans-serif;">
-                <h2 style="color: #0057B8; font-weight: 800; font-size: 16px; margin: 0 0 5px 0; text-transform: uppercase; letter-spacing: 0.5px;">COORDENAÇÃO DO CURSO DE MEDICINA</h2>
-                <div style="color: #CE0058; font-size: 11px; line-height: 1.4; font-weight: 600;">
-                    Coordenador do Curso: Prof. Kristhea Karyne <span style="margin:0 6px;">|</span> 
-                    Coordenadora Adjunta: Prof. Roberya Viana
-                </div>
-            </div>
-        </div>
-    `;
-    
-    // 1b. Create Title for Grid
-    const groupSummary = schedule ? getGroupRangeSummary(schedule) : "";
-    const fullTitle = groupSummary 
-        ? `Semana Padrão 2026.1 - ${periodo} - ${groupSummary}`
-        : `Semana Padrão 2026.1 - ${periodo}`;
-    
-    const gridTitleContainer = document.createElement('div');
-    gridTitleContainer.innerHTML = `<h2 class="pdf-title" style="text-align: center; font-size: 20px; font-weight: bold; color: #374151; margin: 15px 0;">${fullTitle}</h2>`;
-    
-    // 1c. Clone Grid Content
-    const contentClone = scheduleContent.cloneNode(true) as HTMLElement;
-    contentClone.removeAttribute('id');
-    const grid = contentClone.querySelector('.grid');
-    if (grid) grid.className = 'pdf-export-grid';
-    
-    // Assemble Body Capture Container (Title + Grid)
-    const bodyWrapper = document.createElement('div');
-    bodyWrapper.id = 'pdf-body-wrapper';
-    bodyWrapper.style.backgroundColor = '#ffffff';
-    bodyWrapper.style.padding = '10px 40px 40px 40px';
-    bodyWrapper.style.width = `${CAPTURE_WIDTH}px`;
-    bodyWrapper.appendChild(gridTitleContainer);
-    bodyWrapper.appendChild(contentClone);
-    
-    tempContainer.appendChild(headerWrapper);
-    tempContainer.appendChild(bodyWrapper);
-    document.body.appendChild(tempContainer);
-
-    await document.fonts.ready;
-    
-    setTimeout(async () => {
-      try {
-        const { jsPDF } = window.jspdf;
-        
-        const canvasOptions = {
-          scale: 2,
-          useCORS: true, // Still kept true, but Base64 bypasses network
-          allowTaint: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          windowWidth: 1600
-        };
-
-        // Capture Header
-        const headerCanvas = await html2canvas(headerWrapper, canvasOptions);
-        const headerImgData = headerCanvas.toDataURL('image/png');
-        const headerImgProps = new jsPDF().getImageProperties(headerImgData);
-
-        // Capture Body
-        const bodyCanvas = await html2canvas(bodyWrapper, canvasOptions);
-        const bodyImgData = bodyCanvas.toDataURL('image/png');
-        const bodyImgProps = new jsPDF().getImageProperties(bodyImgData);
-        
-        // PDF Setup (A4 Landscape)
-        const pdf = new jsPDF({
-          orientation: 'landscape',
-          unit: 'mm',
-          format: 'a4',
-        });
-
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        const ratio = pdfWidth / bodyImgProps.width; 
-        
-        const headerPdfHeight = (headerImgProps.height * pdfWidth) / headerImgProps.width;
-        const bodyTotalPdfHeight = (bodyImgProps.height * pdfWidth) / bodyImgProps.width;
-        
-        const cards = Array.from(bodyWrapper.querySelectorAll('.aula-card, .free-slot-card'));
-        const cardPositions = cards.map(card => {
-            const rect = card.getBoundingClientRect();
-            const wrapperRect = bodyWrapper.getBoundingClientRect();
-            return {
-                top: rect.top - wrapperRect.top,
-                bottom: rect.bottom - wrapperRect.top,
-                left: rect.left - wrapperRect.left,
-                height: rect.height
-            };
-        });
-
-        let currentSourcePdfY = 0; 
-
-        // --- PAGE 1 ---
-        
-        // Draw Header
-        pdf.addImage(headerImgData, 'PNG', 0, 0, pdfWidth, headerPdfHeight);
-        
-        const page1MarginTop = headerPdfHeight + 5;
-        const page1AvailableHeight = pdfHeight - page1MarginTop - 10; 
-
-        // 1. Calculate Safe Cut for Page 1 (Pixel Conversion)
-        const currentSourcePx = currentSourcePdfY / ratio;
-        const page1AvailableHeightPx = page1AvailableHeight / ratio;
-        let proposedCutPx = currentSourcePx + page1AvailableHeightPx;
-        
-        // 2. Max 4 Cards per Column Constraint (PAGE 1)
-        const visibleCardsP1 = cardPositions.filter(p => p.top >= currentSourcePx - 5);
-        const columnsP1: Record<number, typeof cardPositions> = {};
-        
-        visibleCardsP1.forEach(p => {
-             const colKey = Math.round(p.left / 50) * 50; 
-             if (!columnsP1[colKey]) columnsP1[colKey] = [];
-             columnsP1[colKey].push(p);
-        });
-        
-        let countLimitPxP1 = Infinity;
-        Object.values(columnsP1).forEach(colCards => {
-            colCards.sort((a, b) => a.top - b.top);
-            if (colCards.length > 4) {
-                const card4 = colCards[3]; 
-                const card5 = colCards[4]; 
-                const midpoint = (card4.bottom + card5.top) / 2;
-                
-                if (midpoint > currentSourcePx && midpoint < countLimitPxP1) {
-                     countLimitPxP1 = midpoint;
+    const allGroups = new Set<string>();
+    schedule.forEach(dia => {
+        dia.aulas.forEach(aula => {
+            if (!aula.isFreeSlot) {
+                if (aula.originalGroups && aula.originalGroups.length > 0) {
+                    aula.originalGroups.forEach(g => allGroups.add(g));
+                } else if (aula.grupo) {
+                    allGroups.add(aula.grupo);
                 }
             }
         });
+    });
+
+    return formatGroupLabel(Array.from(allGroups));
+  };
+
+  const handleViewPdf = async () => {
+    const scheduleContent = document.getElementById('schedule-pdf-content');
+    const sourceGrid = scheduleContent?.querySelector('.grid');
+
+    if (!scheduleContent || !sourceGrid) {
+      console.error('Elemento do cronograma não encontrado para gerar o PDF.');
+      return;
+    }
+  
+    setIsGeneratingPdf(true);
+
+    // 1. Cria um wrapper escondido (off-screen) que vai conter todas as páginas
+    const pdfHiddenWrapper = document.createElement('div');
+    pdfHiddenWrapper.className = 'pdf-hidden-wrapper';
+    document.body.appendChild(pdfHiddenWrapper);
+
+    // Helper to create watermark
+    const createWatermark = () => {
+        const img = document.createElement('img');
+        img.src = 'https://cdn.prod.website-files.com/65e07e5b264deb36f6e003d9/6883f05c26e613e478e32cd9_A.png';
+        img.className = 'pdf-watermark';
+        return img;
+    };
+    
+    // 2. Prepara os elementos comuns (Header)
+    const createHeader = () => {
+        const header = document.createElement('div');
+        header.className = 'pdf-header';
         
-        if (countLimitPxP1 < proposedCutPx) {
-            proposedCutPx = countLimitPxP1;
+        // Logo
+        const logo = document.createElement('img');
+        logo.src = 'https://cdn.cookielaw.org/logos/309bef31-1bad-4222-a8de-b66feda5e113/e1bda879-fe71-4686-b676-cc9fbc711aee/fcb85851-ec61-4efb-bae5-e72fdeacac0e/AFYA-FACULDADEMEDICAS-logo.png';
+        logo.alt = 'Logo Afya Ciências Médicas';
+        logo.className = 'pdf-logo';
+        header.appendChild(logo);
+        
+        // Info Coordenação (Direita)
+        const infoDiv = document.createElement('div');
+        infoDiv.className = 'pdf-header-info';
+        
+        const title = document.createElement('h1');
+        title.textContent = 'COORDENAÇÃO DO CURSO DE MEDICINA';
+        infoDiv.appendChild(title);
+        
+        const subTitle = document.createElement('p');
+        subTitle.textContent = 'Coordenador do Curso: Prof. Kristhea Karyne | Coordenadora Adjunta: Prof. Roberya Viana';
+        infoDiv.appendChild(subTitle);
+        
+        header.appendChild(infoDiv);
+        
+        return header;
+    };
+    
+    const groupsText = getFormattedGroups();
+    const createTitle = (pageIndex: number, totalPages: number) => {
+        const title = document.createElement('h2');
+        title.className = 'pdf-title';
+        
+        let titleText = `Semana Padrão 2026.1 - ${periodo}`;
+        if (groupsText) {
+            titleText += ` - ${groupsText}`;
         }
-
-        // 3. Collision Detection
-        const collisionP1 = cardPositions.find(pos => 
-            pos.top < proposedCutPx && pos.bottom > proposedCutPx
-        );
-
-        if (collisionP1) {
-            proposedCutPx = Math.max(currentSourcePx, collisionP1.top - 60);
+        
+        if (totalPages > 1) {
+            titleText += ` (Página ${pageIndex + 1}/${totalPages})`;
         }
         
-        const cutHeightMm = (proposedCutPx * ratio) - currentSourcePdfY;
+        title.textContent = titleText;
+        return title;
+    };
 
-        // PAGE 1 DRAW
-        pdf.addImage(bodyImgData, 'PNG', 0, page1MarginTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
+    // 3. Calcula paginação Horizontal (Dias) e Vertical (Aulas por dia)
+    const dayItems = Array.from(sourceGrid.children);
+    const itemsPerCol = 5; 
+    const maxCardsPerCol = 4; // Máximo de cards de aula por coluna
+    const totalHorizontalPages = Math.ceil(dayItems.length / itemsPerCol);
+    
+    // Estrutura para armazenar o planejamento das páginas
+    interface PagePlan {
+        dayChunk: Element[];
+        cardStart: number;
+        cardEnd: number;
+    }
+    
+    const pdfPagesToRender: PagePlan[] = [];
+
+    for (let h = 0; h < totalHorizontalPages; h++) {
+        const chunk = dayItems.slice(h * itemsPerCol, (h + 1) * itemsPerCol);
         
-        // Mask Bottom
-        pdf.setFillColor(255, 255, 255);
-        pdf.rect(0, page1MarginTop + cutHeightMm, pdfWidth, pdfHeight - (page1MarginTop + cutHeightMm), 'F');
+        // Calcula o máximo de cards nesta seção horizontal para saber quantas páginas verticais são necessárias
+        let maxCardsInChunk = 0;
+        chunk.forEach(dayEl => {
+            // Encontra o container de cards (segundo filho do DiaCard, que é a div com p-4)
+            const cardContainer = dayEl.querySelector('div.p-4');
+            if (cardContainer) {
+                maxCardsInChunk = Math.max(maxCardsInChunk, cardContainer.children.length);
+            }
+        });
+        
+        // Se houver cards, calcula quantas páginas verticais; se não (ex: dia vazio), garante pelo menos 1 página
+        const verticalPages = maxCardsInChunk > 0 ? Math.ceil(maxCardsInChunk / maxCardsPerCol) : 1;
 
-        currentSourcePdfY += cutHeightMm;
+        for (let v = 0; v < verticalPages; v++) {
+            pdfPagesToRender.push({
+                dayChunk: chunk,
+                cardStart: v * maxCardsPerCol,
+                cardEnd: (v + 1) * maxCardsPerCol
+            });
+        }
+    }
 
-        // --- Subsequent Pages ---
-        while (currentSourcePdfY < bodyTotalPdfHeight - 1) { 
-             pdf.addPage();
-             
-             const pageTop = 10; 
-             const pageAvailableHeight = pdfHeight - pageTop - 10;
-             
-             const currentSubSourcePx = currentSourcePdfY / ratio;
-             const pageAvailableHeightPx = pageAvailableHeight / ratio;
-             let nextProposedCutPx = currentSubSourcePx + pageAvailableHeightPx;
+    // 4. Renderiza as páginas no DOM escondido
+    pdfPagesToRender.forEach((plan, index) => {
+        const pageContainer = document.createElement('div');
+        pageContainer.className = 'pdf-export-container';
 
-             const visibleCardsSub = cardPositions.filter(p => p.top >= currentSubSourcePx - 5);
-             const columnsSub: Record<number, typeof cardPositions> = {};
-             
-             visibleCardsSub.forEach(p => {
-                  const colKey = Math.round(p.left / 50) * 50;
-                  if (!columnsSub[colKey]) columnsSub[colKey] = [];
-                  columnsSub[colKey].push(p);
-             });
-             
-             let countLimitPxSub = Infinity;
-             Object.values(columnsSub).forEach(colCards => {
-                colCards.sort((a, b) => a.top - b.top);
-                if (colCards.length > 4) {
-                    const card4 = colCards[3];
-                    const card5 = colCards[4];
-                    const midpoint = (card4.bottom + card5.top) / 2;
+        pageContainer.appendChild(createWatermark()); // Restore Watermark
+        pageContainer.appendChild(createHeader());
+        pageContainer.appendChild(createTitle(index, pdfPagesToRender.length));
+
+        const grid = document.createElement('div');
+        grid.className = 'pdf-export-grid';
+        
+        plan.dayChunk.forEach(originalDayItem => {
+            // Clona a estrutura do DiaCard
+            const dayCardClone = originalDayItem.cloneNode(true) as HTMLElement;
+            const cardsContainer = dayCardClone.querySelector('div.p-4'); // Container dos cards
+            
+            if (cardsContainer) {
+                // Limpa os cards existentes no clone
+                cardsContainer.innerHTML = '';
+                
+                // Pega os cards originais do elemento fonte
+                const originalContainer = originalDayItem.querySelector('div.p-4');
+                if (originalContainer) {
+                    const originalCards = Array.from(originalContainer.children);
+                    // Fatia apenas os cards correspondentes a esta página vertical
+                    const cardsSlice = originalCards.slice(plan.cardStart, plan.cardEnd);
                     
-                    if (midpoint > currentSubSourcePx && midpoint < countLimitPxSub) {
-                        countLimitPxSub = midpoint;
-                    }
+                    cardsSlice.forEach(card => {
+                        cardsContainer.appendChild(card.cloneNode(true));
+                    });
                 }
-             });
-             
-             if (countLimitPxSub < nextProposedCutPx) {
-                 nextProposedCutPx = countLimitPxSub;
-             }
-             
-             const nextCollision = cardPositions.find(pos => 
-                pos.top < nextProposedCutPx && pos.bottom > nextProposedCutPx
-             );
-             
-             if (nextCollision) {
-                 nextProposedCutPx = Math.max(currentSubSourcePx, nextCollision.top - 60);
-             }
-
-             const nextCutHeightMm = (nextProposedCutPx * ratio) - currentSourcePdfY;
-
-             pdf.addImage(bodyImgData, 'PNG', 0, pageTop - currentSourcePdfY, pdfWidth, bodyTotalPdfHeight);
-             
-             if (pageTop + nextCutHeightMm < pdfHeight) {
-                 pdf.setFillColor(255, 255, 255);
-                 pdf.rect(0, pageTop + nextCutHeightMm, pdfWidth, pdfHeight - (pageTop + nextCutHeightMm), 'F');
-             }
-             
-             pdf.setFillColor(255, 255, 255);
-             pdf.rect(0, 0, pdfWidth, pageTop, 'F');
-
-             currentSourcePdfY += nextCutHeightMm;
-             
-             if (nextCutHeightMm <= 0.1) break;
-        }
-
-        const pdfBlobUrl = pdf.output('bloburl');
-        const newWindow = window.open(pdfBlobUrl, '_blank');
+            }
+            grid.appendChild(dayCardClone);
+        });
         
-        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-            console.warn("Popup bloqueado. Iniciando download automático.");
-            pdf.save(`Cronograma_${periodo}.pdf`);
-            alert("O PDF foi baixado automaticamente porque a visualização em nova aba foi bloqueada pelo navegador.");
+        pageContainer.appendChild(grid);
+        pdfHiddenWrapper.appendChild(pageContainer);
+    });
+
+    // 5. Aguarda renderização e captura
+    requestAnimationFrame(async () => {
+      try {
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({
+          orientation: 'landscape',
+          unit: 'mm',
+          format: 'a3',
+        });
+
+        const pages = pdfHiddenWrapper.querySelectorAll('.pdf-export-container');
+
+        for (let i = 0; i < pages.length; i++) {
+            const pageEl = pages[i] as HTMLElement;
+            
+            const canvas = await html2canvas(pageEl, {
+              scale: 2, // Alta resolução
+              useCORS: true,
+              backgroundColor: '#ffffff'
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            
+            const imgProps = pdf.getImageProperties(imgData);
+            const imgHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+            if (i > 0) {
+                pdf.addPage();
+            }
+
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, imgHeight);
         }
+
+        const pdfUrl = pdf.output('bloburl');
+        window.open(pdfUrl, '_blank');
 
       } catch (e) {
         console.error('Erro ao gerar o PDF:', e);
         alert('Ocorreu um erro ao gerar o PDF. Tente novamente.');
       } finally {
-        document.body.removeChild(tempContainer);
+        document.body.removeChild(pdfHiddenWrapper);
         setIsGeneratingPdf(false);
       }
-    }, 2000); 
+    });
   };
   
-  const hasClasses = schedule && schedule.length > 0;
+  const hasClasses = schedule && schedule.some(dia => dia.aulas.some(aula => !aula.isFreeSlot));
 
   if (!hasClasses) {
     return (
       <div className="text-center p-8 bg-slate-800 rounded-lg shadow-lg border border-slate-700 animate-fade-in">
         <NotFoundIcon className="w-16 h-16 mx-auto text-gray-500 mb-4" />
-        <p className="text-xl font-semibold text-gray-200">Nenhuma informação disponível</p>
+        <p className="text-xl font-semibold text-gray-200">Nenhuma aula encontrada</p>
         <p className="text-md mt-1 text-gray-400">
-          Não foi possível carregar a estrutura da semana.
+          Não há aulas correspondentes aos filtros selecionados para esta semana.
         </p>
       </div>
     );
@@ -503,9 +372,9 @@ const ScheduleDisplay: React.FC<ScheduleDisplayProps> = ({ schedule, periodo }) 
         </button>
       </div>
       <div id="schedule-pdf-content">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {schedule.map((dia, index) => (
-            <div key={dia.dia} className="animate-fade-in h-full" style={{ animationDelay: `${index * 50}ms` }}>
+            <div key={dia.dia} className="animate-fade-in" style={{ animationDelay: `${index * 50}ms` }}>
               <DiaCard diaDeAula={dia} />
             </div>
           ))}

@@ -1,22 +1,16 @@
 
-export interface AulaGroupDetail {
-  grupo: string;
-  sala: string;
-  horario: string;
-  professor: string;
-  tipo?: string;
-  observacao?: string;
-  startMinutes: number; // Used for sorting inside the card
-  endMinutes: number;
-}
-
 export interface Aula {
   isFreeSlot?: boolean;
-  horario: string; // Represents the full range (e.g., Earliest Start - Latest End)
+  horario: string;
   disciplina: string;
+  sala: string;
   modulo: string;
-  subSessions: AulaGroupDetail[]; // Array of specific group details
-  observacao?: string; // General observation
+  tipo?: string;
+  professor?: string;
+  events?: Event[];
+  observacao?: string;
+  grupo?: string;
+  originalGroups?: string[]; // Stores the list of original groups before formatting
 }
 
 // Representa uma entrada de aula individual como está no aulas.json
